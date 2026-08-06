@@ -1,0 +1,163 @@
+name: Build and Auto-Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag, for example v0.1.0
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ncm-breaker-release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Resolve and validate version
+        id: version
+        shell: bash
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          MANUAL_TAG: ${{ inputs.tag }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${EVENT_TAG:-$MANUAL_TAG}"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must use the vX.Y.Z format: $tag" >&2
+            exit 1
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            target: windows-x86_64
+          - os: ubuntu-22.04
+            target: linux-x86_64
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+          persist-credentials: false
+
+      - name: Set up Zulu JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "25"
+          architecture: x64
+
+      - name: Compile
+        shell: bash
+        run: |
+          mkdir -p build/classes dist release
+          find src/main/java -type f -name '*.java' -print > build/sources.txt
+          javac --release 17 -encoding UTF-8 -d build/classes @build/sources.txt
+          jar --create --file dist/ncm-breaker.jar \
+            --main-class com.ncmbreaker.Main -C build/classes .
+
+      - name: Package Windows application
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          $modules = (& jdeps --multi-release 17 --ignore-missing-deps `
+            --print-module-deps .\dist\ncm-breaker.jar).Trim()
+          if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($modules)) {
+            throw 'Unable to determine Java runtime modules.'
+          }
+          jpackage `
+            --type app-image `
+            --dest .\build\package `
+            --input .\dist `
+            --name NcmBreaker `
+            --main-jar ncm-breaker.jar `
+            --main-class com.ncmbreaker.Main `
+            --add-modules $modules `
+            --app-version $env:VERSION `
+            --icon .\src\main\resources\ncm-breaker.ico
+          if ($LASTEXITCODE -ne 0) {
+            throw "jpackage failed with exit code $LASTEXITCODE."
+          }
+          $launcher = Resolve-Path .\build\package\NcmBreaker\NcmBreaker.exe
+          $process = Start-Process -FilePath $launcher -ArgumentList '--help' -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            throw "Packaged launcher failed with exit code $($process.ExitCode)."
+          }
+          Compress-Archive `
+            -LiteralPath .\build\package\NcmBreaker `
+            -DestinationPath ".\release\NcmBreaker-$env:VERSION-windows-x86_64.zip" `
+            -CompressionLevel Optimal
+
+      - name: Package Linux application
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          modules="$(jdeps --multi-release 17 --ignore-missing-deps \
+            --print-module-deps dist/ncm-breaker.jar)"
+          jpackage \
+            --type app-image \
+            --dest build/package \
+            --input dist \
+            --name NcmBreaker \
+            --main-jar ncm-breaker.jar \
+            --main-class com.ncmbreaker.Main \
+            --add-modules "$modules" \
+            --app-version "$VERSION" \
+            --icon src/main/resources/ncm-breaker.png
+          build/package/NcmBreaker/bin/NcmBreaker --help >/dev/null
+          tar -C build/package -czf \
+            "release/NcmBreaker-$VERSION-linux-x86_64.tar.gz" NcmBreaker
+
+      - name: Store release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release
+
+      - name: Upload assets to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          files: release/*

@@ -1,0 +1,11 @@
+/.idea/
+*.iml
+
+/build/
+/dist/
+/release/
+
+/Java/
+
+/Other_Project/
+/example/

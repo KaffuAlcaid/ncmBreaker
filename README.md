@@ -1,0 +1,93 @@
+# NCM Breaker
+
+NCM Breaker 是一个本地 NCM 转换工具，可以一次处理多个文件或整个文件夹，把支持的 NCM 文件转换为 MP3 或 FLAC。
+
+整个转换过程都在本机完成。程序不会下载音乐，不需要登录账号，也不会向网络上传文件。请只处理你通过合法渠道取得并有权转换的内容。
+
+## 主要功能
+
+- 深色图形界面，支持添加文件和整个文件夹。
+- 批量检测文件类型、音频格式、封面和转换状态。
+- 顺序后台转换，可查看单个文件和总体进度，也可以取消任务。
+- 自动判断转换出来的是 MP3 还是 FLAC。
+- MP3 可以写入歌曲名、歌手、专辑和封面。
+- 同名文件可以自动编号、跳过或覆盖。
+- 提供命令行入口，方便脚本调用和检查文件。
+
+## Windows 使用方法
+
+1. 从 GitHub Releases 下载 `NcmBreaker-版本-windows-x86_64.zip`。
+2. 完整解压 ZIP，不要只复制其中的 `NcmBreaker.exe`。
+3. 双击 `NcmBreaker.exe`。
+4. 添加 NCM 文件或文件夹，选择输出目录和同名文件处理方式。
+5. 点击“开始转换”。
+
+程序已经自带 Java 运行环境，电脑上不用另外安装 Java。
+
+## Linux 使用方法
+
+从 Releases 下载并解压 `NcmBreaker-版本-linux-x86_64.tar.gz`，然后运行 `NcmBreaker/bin/NcmBreaker`。该版本以 Ubuntu 22.04 x86_64 为构建基线，需要带图形桌面以及常见的字体和 X11/XWayland 运行库。
+
+## 输出说明
+
+| 项目 | 当前行为 |
+| --- | --- |
+| 音频格式 | 支持经典 NCM 中的 MP3 和 FLAC 音频负载 |
+| MP3 标签 | 可写入歌曲名、歌手和专辑 |
+| MP3 封面 | 可写入容器中已有的 JPEG 或 PNG 封面 |
+| FLAC 标签 | 当前只恢复原始音频，不改写 FLAC 元数据 |
+| 歌词 | 当前不读取或写入歌词 |
+| 同名文件 | 支持自动编号、跳过和覆盖 |
+
+程序不会把所有以 `.ncm` 结尾的文件都强行转换。检测结果可能是：
+
+| 检测结果 | 含义 |
+| --- | --- |
+| `CLASSIC_NCM` | 当前版本可以解析和转换 |
+| `NOT_NCM` | 文件头不是已知的 NCM 容器 |
+| `DAMAGED` | 文件长度、字段或内容不完整 |
+| `UNSUPPORTED_VARIANT` | 看起来是 NCM，但不是当前支持的经典结构 |
+
+## 可选命令行
+
+没有参数时打开图形界面：
+
+```text
+java -jar ncm-breaker.jar
+```
+
+检查或批量转换：
+
+```text
+java -jar ncm-breaker.jar --inspect <文件或目录>...
+java -jar ncm-breaker.jar -o <输出目录> <文件或目录>...
+```
+
+命令行模式只恢复音频，不启用 GUI 中的 MP3 标签和封面写入选项。
+
+Windows 本地构建脚本是 `build.ps1`。它默认从 `Java/zulu-jdk-25-win` 使用 Zulu JDK 25，并通过 `--release 17` 生成 `dist/ncm-breaker.jar`。`Java/` 是本机目录，不提交到仓库。
+
+## 自动构建和发布
+
+- Pull Request 或推送到 `main` 时，GitHub Actions 会在 Windows x86_64 和 Linux x86_64 上编译并检查入口。
+- 在 GitHub 网页发布 `vX.Y.Z` 格式的 Release 后，工作流会自动生成两个平台的自带运行时压缩包，并上传到该 Release。
+- 构建失败后，可以在 Actions 页面手动运行 `Build and Auto-Release`，并输入已有的 Release 标签重新打包。
+
+## 技术文档
+
+- [经典 NCM 加密流程](docs/ncm-classic-encryption.md)
+- [经典 NCM 解密流程](docs/ncm-classic-decryption.md)
+
+## 参考
+
+感谢 [charlotte-xiao/NCM2MP3](https://github.com/charlotte-xiao/NCM2MP3) 对经典 NCM 格式的分析。本项目参考了其中的格式和算法说明，代码、界面及其他功能均重新实现。
+
+## 免责声明
+
+NCM Breaker 是独立开发的工具，与网易云音乐及其关联方不存在隶属、授权、合作或背书关系。
+
+本工具只用于处理用户已经合法取得并有权转换的本地文件，不提供音乐下载、账号登录或在线服务绕过功能。使用者应遵守适用的法律法规和服务协议，并自行确认对相关内容拥有使用和转换权限。
+
+本软件按“现状”提供，不保证兼容所有 NCM 版本，也不保证转换结果始终完整、准确或可用。因文件损坏、格式变化以及使用或处理转换结果产生的风险，由使用者自行承担；作者在适用法律允许的范围内不承担相关责任。
+
+本工具不会授予用户访问、复制或传播受版权保护内容的权利。
