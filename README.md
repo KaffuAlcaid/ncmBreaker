@@ -30,6 +30,14 @@ NCM Breaker 是一个本地 NCM 转换工具，可以一次处理多个文件或
 
 该版本以 Ubuntu 22.04 x86_64 为构建基线，需要带图形桌面以及常见的字体和 X11/XWayland 运行库
 
+## 通用 JAR
+
+Releases 同时提供 `NcmBreaker-版本.jar`，可在其他平台运行，需要 Java 17 或更高版本
+
+```text
+java -jar NcmBreaker-版本.jar
+```
+
 ## 输出说明
 
 | 项目      | 当前行为                               |

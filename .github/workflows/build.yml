@@ -111,6 +111,9 @@ jobs:
             -LiteralPath .\build\package\NcmBreaker `
             -DestinationPath ".\release\NcmBreaker-$env:VERSION-windows-x86_64.zip" `
             -CompressionLevel Optimal
+          Copy-Item `
+            -LiteralPath .\dist\ncm-breaker.jar `
+            -Destination ".\release\NcmBreaker-$env:VERSION.jar"
 
       - name: Package Linux application
         if: runner.os == 'Linux'
