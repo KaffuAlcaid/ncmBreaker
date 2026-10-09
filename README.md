@@ -1,95 +1,85 @@
 # NCM Breaker
 
-NCM Breaker 是一个本地 NCM 转换工具，可以一次处理多个文件或整个文件夹，把支持的 NCM 文件转换为 MP3 或 FLAC。
+NCM Breaker 可以将本地网易云 NCM 文件批量转换为 MP3 或 FLAC，并为 MP3 写入歌曲信息和专辑封面
 
-整个转换过程都在本机完成。程序不会下载音乐，不需要登录账号，也不会向网络上传文件。请只处理你通过合法渠道取得并有权转换的内容。
+**[下载 Windows 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.1.0/NcmBreaker-0.1.0-windows-x86_64.zip)** · [下载 Linux 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.1.0/NcmBreaker-0.1.0-linux-x86_64.tar.gz) · [全部版本与通用 JAR](https://github.com/KaffuAlcaid/ncmBreaker/releases)
+
+快速导航：[主要功能](#主要功能) · [开始使用](#开始使用) · [转换与输出](#转换与输出) · [文档与反馈](#文档与反馈) · [许可与致谢](#许可与致谢)
 
 ## 主要功能
 
-- 深色图形界面，支持添加文件和整个文件夹
-- 批量检测文件类型、音频格式、封面和转换状态
-- 顺序后台转换，可查看单个文件和总体进度，也可以取消任务
-- 自动判断转换出来的是 MP3 还是 FLAC
-- MP3 可以写入歌曲名、歌手、专辑和封面
-- 同名文件可以自动编号、跳过或覆盖
-- 提供命令行入口，方便脚本调用和检查文件
+- **批量转换**：添加多个文件或整个文件夹，支持扫描子文件夹和勾选转换
+- **歌曲信息与封面**：将 NCM 中的歌曲名、歌手、专辑和封面写入 MP3
+- **同名文件处理**：支持自动编号、跳过或覆盖
 
-## Windows 使用方法
+## 开始使用
 
-1. 从 GitHub Releases 下载 `NcmBreaker-版本-windows-x86_64.zip`
-2. 完整解压 ZIP，不要只复制其中的 `NcmBreaker.exe`
-3. 双击 `NcmBreaker.exe`
-4. 添加 NCM 文件或文件夹，选择输出目录和同名文件处理方式
-5. 点击“开始转换”
+Windows x86-64 用户下载并完整解压 ZIP，双击 `NcmBreaker.exe` 即可使用，程序自带 Java 运行环境
 
-程序已经自带 Java 运行环境，电脑上不用另外安装 Java
+1. **添加文件**：点击“添加文件”或“添加文件夹”，勾选需要转换的文件
+2. **设置输出**：选择输出目录，按需调整“写入基础标签”“嵌入专辑封面”和同名文件处理方式
+3. **开始转换**：点击“开始转换”，完成后在输出目录中查看 MP3 或 FLAC 文件
 
-## Linux 使用方法
+结果保存在所选输出目录中，默认位置为用户主目录下的 `Music/NCM Output`
 
-从 Releases 下载并解压 `NcmBreaker-版本-linux-x86_64.tar.gz`，然后运行 `NcmBreaker/bin/NcmBreaker`
+<details>
+<summary>在 Linux 上使用</summary>
 
-该版本以 Ubuntu 22.04 x86_64 为构建基线，需要带图形桌面以及常见的字体和 X11/XWayland 运行库
+下载并解压 `NcmBreaker-0.1.0-linux-x86_64.tar.gz`，运行解压后的 `NcmBreaker/bin/NcmBreaker`
 
-## 通用 JAR
+Linux 版同样自带 Java 运行环境，以 Ubuntu 22.04 x86_64 为构建基线，需要图形桌面以及常见的字体和 X11/XWayland 运行库
 
-Releases 同时提供 `NcmBreaker-版本.jar`，可在其他平台运行，需要 Java 17 或更高版本
+</details>
 
-```text
-java -jar NcmBreaker-版本.jar
-```
+<details>
+<summary>使用通用 JAR 与命令行</summary>
 
-## 输出说明
+安装 Java 17 或更高版本，从 [Releases](https://github.com/KaffuAlcaid/ncmBreaker/releases) 下载 `NcmBreaker-0.1.0.jar`
 
-| 项目      | 当前行为                               |
-|-----------|----------------------------------------|
-| 音频格式  | 支持经典 NCM 中的 MP3 和 FLAC 音频负载 |
-| MP3 标签  | 可写入歌曲名、歌手和专辑               |
-| MP3 封面  | 可写入容器中已有的 JPEG 或 PNG 封面    |
-| FLAC 标签 | 当前只恢复原始音频，不改写 FLAC 元数据 |
-| 歌词      | 当前不读取或写入歌词                   |
-| 同名文件  | 支持自动编号、跳过和覆盖               |
-
-程序不会把所有以 `.ncm` 结尾的文件都强行转换。检测结果可能是：
-
-| 检测结果              | 含义                                   |
-|-----------------------|----------------------------------------|
-| `CLASSIC_NCM`         | 当前版本可以解析和转换                 |
-| `NOT_NCM`             | 文件头不是已知的 NCM 容器              |
-| `DAMAGED`             | 文件长度、字段或内容不完整             |
-| `UNSUPPORTED_VARIANT` | 看起来是 NCM，但不是当前支持的经典结构 |
-
-## 可选命令行
-
-没有参数时打开图形界面：
+打开图形界面：
 
 ```text
-java -jar ncm-breaker.jar
+java -jar NcmBreaker-0.1.0.jar
 ```
 
-检查或批量转换：
+检查文件信息：
 
 ```text
-java -jar ncm-breaker.jar --inspect <文件或目录>...
-java -jar ncm-breaker.jar -o <输出目录> <文件或目录>...
+java -jar NcmBreaker-0.1.0.jar --inspect "音乐目录"
 ```
 
-命令行模式只恢复音频，不启用 GUI 中的 MP3 标签和封面写入选项
+将文件夹中的 NCM 批量转换到指定目录：
 
-## 技术文档
+```text
+java -jar NcmBreaker-0.1.0.jar -o "输出目录" "音乐目录"
+```
 
-- [经典 NCM 加密流程](docs/ncm-classic-encryption.md)
-- [经典 NCM 解密流程](docs/ncm-classic-decryption.md)
+命令行恢复原始音频，MP3 标签和封面写入请使用图形界面。可在命令末尾传入多个文件或目录，省略 `-o` 时结果保存在当前工作目录下的 `output`
 
-## 参考
+</details>
+
+## 转换与输出
+
+当前支持经典 NCM 格式，输出格式与文件中的原始音频一致
+
+| 输出格式 | 歌曲信息与封面 |
+| --- | --- |
+| MP3 | 可从 NCM 写入歌曲名、歌手、专辑和 JPEG / PNG 封面 |
+| FLAC | 保留原始音频中的元数据 |
+
+## 文档与反馈
+
+- [经典 NCM 加密流程](docs/ncm-classic-encryption.md)：容器结构、密钥、元数据和音频的组织方式
+- [经典 NCM 解密流程](docs/ncm-classic-decryption.md)：检测、解密与音频恢复过程
+- [反馈问题](https://github.com/KaffuAlcaid/ncmBreaker/issues/new)：请附系统、程序版本、操作步骤和提示信息
+
+## 许可与致谢
+
+采用 [MIT License](LICENSE)
+
+NCM Breaker 是独立开发的开源项目，与网易云音乐及其关联方无隶属或合作关系\
+请在适用法律法规和服务协议允许的范围内，处理合法取得且有权转换的文件
+
+由 [KaffuAlcaid](https://github.com/KaffuAlcaid) 开发维护
 
 感谢 [charlotte-xiao/NCM2MP3](https://github.com/charlotte-xiao/NCM2MP3) 对经典 NCM 格式的分析。本项目参考了其中的格式和算法说明，代码、界面及其他功能均重新实现
-
-## 免责声明
-
-NCM Breaker 是独立开发的工具，与网易云音乐及其关联方不存在隶属、授权、合作或背书关系。
-
-本工具只用于处理用户已经合法取得并有权转换的本地文件，不提供音乐下载、账号登录或在线服务绕过功能。使用者应遵守适用的法律法规和服务协议，并自行确认对相关内容拥有使用和转换权限。
-
-本软件按“现状”提供，不保证兼容所有 NCM 版本，也不保证转换结果始终完整、准确或可用。因文件损坏、格式变化以及使用或处理转换结果产生的风险，由使用者自行承担；作者在适用法律允许的范围内不承担相关责任。
-
-本工具不会授予用户访问、复制或传播受版权保护内容的权利。
