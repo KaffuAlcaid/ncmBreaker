@@ -1,0 +1,16 @@
+jaudiotagger 3.0.1
+Project: https://www.jthink.net/jaudiotagger/
+Source: https://github.com/ijabz/jaudiotagger
+Maven coordinates: net.jthink:jaudiotagger:3.0.1
+Authors: Paul Taylor and contributors.
+Includes the Entagged Audio Tag library, Copyright (c) 2003-2005 Raphael Slinckx.
+
+This library is licensed under the GNU Lesser General Public License,
+version 2.1 or, at your option, any later version. See lgpl-2.1.txt.
+
+The unmodified library is included under its original Java package names.
+Its corresponding source and Maven build configuration are included in
+jaudiotagger-3.0.1-sources.jar in this directory. The application source and
+Maven build configuration are available at https://github.com/KaffuAlcaid/ncmBreaker.
+The library can be modified and the application rebuilt with that version.
+The application's MIT license permits these modifications and redistribution.

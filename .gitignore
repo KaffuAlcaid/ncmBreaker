@@ -4,6 +4,9 @@
 /build/
 /dist/
 /release/
+/target/
+/local-diagnostics/
+/.ncm-breaker/
 
 /Java/
 

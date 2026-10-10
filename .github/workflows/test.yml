@@ -35,11 +35,9 @@ jobs:
       - name: Compile
         shell: bash
         run: |
-          mkdir -p build/classes dist
-          find src/main/java -type f -name '*.java' -print > build/sources.txt
-          javac --release 17 -encoding UTF-8 -d build/classes @build/sources.txt
-          jar --create --file dist/ncm-breaker.jar \
-            --main-class com.ncmbreaker.Main -C build/classes .
+          mvn --batch-mode --no-transfer-progress package
+          mkdir -p dist
+          cp target/ncm-breaker.jar dist/ncm-breaker.jar
 
       - name: Smoke test CLI entry point
         shell: bash

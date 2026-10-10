@@ -1,5 +1,7 @@
 package com.ncmbreaker;
 
+import com.ncmbreaker.ui.account.AccountPanel;
+import com.ncmbreaker.ui.music.MusicPanel;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractButton;
 import javax.swing.ImageIcon;
@@ -14,6 +16,7 @@ import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTabbedPane;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -39,6 +42,8 @@ import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -46,6 +51,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutionException;
 
 public final class MainWindow extends JFrame {
     private final NcmFileIO fileIO = new NcmFileIO();
@@ -66,21 +72,40 @@ public final class MainWindow extends JFrame {
     private final JLabel summaryLabel = mutedLabel("0 个文件");
     private final JProgressBar overallProgress = new JProgressBar(0, 100);
     private final JTable table;
+    private final JTabbedPane pages = new JTabbedPane();
+    private final AccountPanel accountPanel = new AccountPanel();
+    private final MusicPanel musicPanel = new MusicPanel();
 
     private SwingWorker<?, ?> scanWorker;
     private ConversionWorker conversionWorker;
+    private boolean closing;
 
     public MainWindow() {
         super("NCM Breaker");
         table = createTable();
+        musicPanel.setLoginAction(this::showAccountPage);
+        accountPanel.setSessionListener(musicPanel::setSession);
         configureWindow();
         buildLayout();
         bindActions();
         updateControls();
+        accountPanel.restoreLogin();
     }
 
     private void configureWindow() {
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent event) {
+                closeWindow();
+            }
+
+            @Override
+            public void windowClosed(WindowEvent event) {
+                musicPanel.close();
+                accountPanel.close();
+            }
+        });
         setMinimumSize(new Dimension(900, 600));
         setSize(1040, 680);
         setLocationRelativeTo(null);
@@ -103,8 +128,20 @@ public final class MainWindow extends JFrame {
         content.add(createControls(), BorderLayout.NORTH);
         content.add(new JScrollPane(table), BorderLayout.CENTER);
         content.add(createFooter(), BorderLayout.SOUTH);
-        root.add(content, BorderLayout.CENTER);
+        pages.addTab("本地转换", content);
+        pages.addTab("音乐下载", musicPanel);
+        pages.addTab("网易云账号", accountPanel);
+        pages.addChangeListener(event -> {
+            if (pages.getSelectedComponent() == accountPanel) {
+                accountPanel.activate();
+            }
+        });
+        root.add(pages, BorderLayout.CENTER);
         setContentPane(root);
+    }
+
+    public void showAccountPage() {
+        pages.setSelectedComponent(accountPanel);
     }
 
     private JPanel createHeader() {
@@ -131,9 +168,6 @@ public final class MainWindow extends JFrame {
         brand.add(names);
 
         header.add(brand, BorderLayout.WEST);
-        var local = mutedLabel("本地处理");
-        local.setHorizontalAlignment(SwingConstants.RIGHT);
-        header.add(local, BorderLayout.EAST);
         return header;
     }
 
@@ -348,8 +382,31 @@ public final class MainWindow extends JFrame {
 
             @Override
             protected void done() {
+                String errorMessage = null;
+                try {
+                    get();
+                } catch (CancellationException ignored) {
+                    // Closing the window may cancel an in-progress scan.
+                } catch (InterruptedException exception) {
+                    Thread.currentThread().interrupt();
+                    errorMessage = "文件扫描被中断。";
+                } catch (ExecutionException exception) {
+                    var cause = exception.getCause();
+                    var detail = cause == null ? exception.getMessage() : cause.getMessage();
+                    errorMessage = detail == null || detail.isBlank()
+                            ? "读取文件或文件夹失败。"
+                            : "读取文件或文件夹失败：" + detail;
+                }
                 scanWorker = null;
                 updateControls();
+                if (errorMessage != null && !closing) {
+                    JOptionPane.showMessageDialog(
+                            MainWindow.this,
+                            errorMessage,
+                            "扫描失败",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
             }
         };
         scanWorker.execute();
@@ -397,9 +454,25 @@ public final class MainWindow extends JFrame {
 
     private void cancelConversion() {
         if (conversionWorker != null) {
-            conversionWorker.cancel(true);
+            conversionWorker.requestCancellation();
             cancelButton.setEnabled(false);
         }
+    }
+
+    private void closeWindow() {
+        closing = true;
+        musicPanel.close();
+        accountPanel.close();
+        if (conversionWorker != null) {
+            conversionWorker.requestCancellation();
+            cancelButton.setEnabled(false);
+            summaryLabel.setText("正在取消转换并清理临时文件");
+            return;
+        }
+        if (scanWorker != null) {
+            scanWorker.cancel(true);
+        }
+        dispose();
     }
 
     private void updateControls() {
@@ -802,6 +875,8 @@ public final class MainWindow extends JFrame {
         private final List<FileEntry> entries;
         private final Path outputDirectory;
         private final NcmFileIO.DecodeOptions options;
+        private volatile boolean cancellationRequested;
+        private volatile Thread workerThread;
 
         private ConversionWorker(
                 List<FileEntry> entries,
@@ -815,39 +890,52 @@ public final class MainWindow extends JFrame {
 
         @Override
         protected Void doInBackground() {
-            for (var entry : entries) {
-                if (isCancelled()) {
-                    break;
-                }
-                publish(new ProgressUpdate(entry, RowState.CONVERTING, 0, "正在转换", null));
-                var lastProgress = new int[]{-1};
-                try {
-                    var result = fileIO.decode(entry.source, outputDirectory, options, (completed, total) -> {
-                        if (isCancelled()) {
-                            Thread.currentThread().interrupt();
-                        }
-                        var percent = total == 0 ? 100 : (int) Math.min(100, completed * 100 / total);
-                        if (percent != lastProgress[0]) {
-                            lastProgress[0] = percent;
-                            publish(new ProgressUpdate(entry, RowState.CONVERTING, percent, "正在转换", null));
-                        }
-                    });
-                    if (result.outcome() == NcmFileIO.DecodeOutcome.SKIPPED) {
-                        publish(new ProgressUpdate(entry, RowState.SKIPPED, 100, "目标文件已存在", result.output()));
-                    } else {
-                        var message = "flac".equals(result.audioFormat()) && (options.writeBasicTags() || options.embedCover())
-                                ? "已完成，FLAC 标签保持原样"
-                                : "已完成";
-                        publish(new ProgressUpdate(entry, RowState.DONE, 100, message, result.output()));
+            workerThread = Thread.currentThread();
+            try {
+                for (var entry : entries) {
+                    if (cancellationRequested) {
+                        break;
                     }
-                } catch (CancellationException exception) {
-                    publish(new ProgressUpdate(entry, RowState.CANCELLED, entry.progress, "已取消", null));
-                    break;
-                } catch (Exception exception) {
-                    publish(new ProgressUpdate(entry, RowState.FAILED, entry.progress, exception.getMessage(), null));
+                    publish(new ProgressUpdate(entry, RowState.CONVERTING, 0, "正在转换", null));
+                    var lastProgress = new int[]{-1};
+                    try {
+                        var result = fileIO.decode(entry.source, outputDirectory, options, (completed, total) -> {
+                            if (cancellationRequested) {
+                                Thread.currentThread().interrupt();
+                            }
+                            var percent = total == 0 ? 100 : (int) Math.min(100, completed * 100 / total);
+                            if (percent != lastProgress[0]) {
+                                lastProgress[0] = percent;
+                                publish(new ProgressUpdate(entry, RowState.CONVERTING, percent, "正在转换", null));
+                            }
+                        });
+                        if (result.outcome() == NcmFileIO.DecodeOutcome.SKIPPED) {
+                            publish(new ProgressUpdate(entry, RowState.SKIPPED, 100, "目标文件已存在", result.output()));
+                        } else {
+                            var message = "flac".equals(result.audioFormat()) && (options.writeBasicTags() || options.embedCover())
+                                    ? "已完成，FLAC 标签保持原样"
+                                    : "已完成";
+                            publish(new ProgressUpdate(entry, RowState.DONE, 100, message, result.output()));
+                        }
+                    } catch (CancellationException exception) {
+                        publish(new ProgressUpdate(entry, RowState.CANCELLED, entry.progress, "已取消", null));
+                        break;
+                    } catch (Exception exception) {
+                        publish(new ProgressUpdate(entry, RowState.FAILED, entry.progress, exception.getMessage(), null));
+                    }
                 }
+                return null;
+            } finally {
+                workerThread = null;
             }
-            return null;
+        }
+
+        private void requestCancellation() {
+            cancellationRequested = true;
+            var thread = workerThread;
+            if (thread != null) {
+                thread.interrupt();
+            }
         }
 
         @Override
@@ -860,7 +948,7 @@ public final class MainWindow extends JFrame {
 
         @Override
         protected void done() {
-            if (isCancelled()) {
+            if (cancellationRequested) {
                 entries.stream()
                         .filter(entry -> entry.state == RowState.QUEUED)
                         .forEach(entry -> entry.update(RowState.CANCELLED, 0, "已取消", null));
@@ -868,6 +956,9 @@ public final class MainWindow extends JFrame {
             conversionWorker = null;
             tableModel.refresh();
             updateControls();
+            if (closing) {
+                dispose();
+            }
         }
     }
 

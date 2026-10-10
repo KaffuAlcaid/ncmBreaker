@@ -49,6 +49,20 @@ final class DarkTheme {
         defaults.put("text", resource(TEXT));
 
         putColor("Panel.background", WINDOW);
+        putColor("TabbedPane.background", WINDOW);
+        putColor("TabbedPane.foreground", TEXT);
+        putColor("TabbedPane.selected", SURFACE);
+        putColor("TabbedPane.contentAreaColor", WINDOW);
+        putColor("TabbedPane.focus", PRIMARY);
+        putColor("TabbedPane.unselectedBackground", SURFACE_SOFT);
+        putColor("TabbedPane.tabAreaBackground", WINDOW);
+        putColor("TabbedPane.highlight", BORDER);
+        putColor("TabbedPane.light", BORDER);
+        putColor("TabbedPane.shadow", BORDER);
+        putColor("TabbedPane.darkShadow", BORDER);
+        putColor("TabbedPane.borderHightlightColor", BORDER);
+        putColor("TabbedPane.selectHighlight", PRIMARY);
+        defaults.put("TabbedPane.tabInsets", new java.awt.Insets(8, 14, 8, 14));
         putColor("Label.foreground", TEXT);
         putColor("Button.background", SURFACE);
         putColor("Button.foreground", TEXT);
@@ -56,6 +70,9 @@ final class DarkTheme {
         putColor("Button.select", SURFACE_SOFT);
         putColor("CheckBox.background", SURFACE_SOFT);
         putColor("CheckBox.foreground", TEXT);
+        putColor("RadioButton.background", WINDOW);
+        putColor("RadioButton.foreground", TEXT);
+        putColor("RadioButton.disabledText", MUTED);
         putColor("ComboBox.background", SURFACE);
         putColor("ComboBox.foreground", TEXT);
         putColor("ComboBox.selectionBackground", new Color(0x2f, 0x65, 0x66));
