@@ -1,6 +1,7 @@
 package com.ncmbreaker;
 
-import com.ncmbreaker.ui.account.AccountPanel;
+import com.ncmbreaker.ui.WorkspaceTabs;
+import com.ncmbreaker.ui.account.AccountMenu;
 import com.ncmbreaker.ui.music.MusicPanel;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractButton;
@@ -72,8 +73,8 @@ public final class MainWindow extends JFrame {
     private final JLabel summaryLabel = mutedLabel("0 个文件");
     private final JProgressBar overallProgress = new JProgressBar(0, 100);
     private final JTable table;
-    private final JTabbedPane pages = new JTabbedPane();
-    private final AccountPanel accountPanel = new AccountPanel();
+    private final JTabbedPane pages = new WorkspaceTabs();
+    private final AccountMenu accountMenu = new AccountMenu();
     private final MusicPanel musicPanel = new MusicPanel();
 
     private SwingWorker<?, ?> scanWorker;
@@ -84,12 +85,12 @@ public final class MainWindow extends JFrame {
         super("NCM Breaker");
         table = createTable();
         musicPanel.setLoginAction(this::showAccountPage);
-        accountPanel.setSessionListener(musicPanel::setSession);
+        accountMenu.setSessionListener(musicPanel::setSession);
         configureWindow();
         buildLayout();
         bindActions();
         updateControls();
-        accountPanel.restoreLogin();
+        accountMenu.restoreLogin();
     }
 
     private void configureWindow() {
@@ -103,11 +104,11 @@ public final class MainWindow extends JFrame {
             @Override
             public void windowClosed(WindowEvent event) {
                 musicPanel.close();
-                accountPanel.close();
+                accountMenu.close();
             }
         });
-        setMinimumSize(new Dimension(900, 600));
-        setSize(1040, 680);
+        setMinimumSize(new Dimension(960, 660));
+        setSize(1100, 780);
         setLocationRelativeTo(null);
         setIconImages(List.of(
                 createAppIcon(16),
@@ -130,25 +131,26 @@ public final class MainWindow extends JFrame {
         content.add(createFooter(), BorderLayout.SOUTH);
         pages.addTab("本地转换", content);
         pages.addTab("音乐下载", musicPanel);
-        pages.addTab("网易云账号", accountPanel);
-        pages.addChangeListener(event -> {
-            if (pages.getSelectedComponent() == accountPanel) {
-                accountPanel.activate();
-            }
-        });
+        pages.addTab("下载任务", musicPanel.downloadView());
+        var tasksLabel = new JLabel("下载任务  0");
+        tasksLabel.setFont(pages.getFont());
+        tasksLabel.setPreferredSize(new Dimension(122, 24));
+        pages.setTabComponentAt(2, tasksLabel);
+        musicPanel.setTaskCountListener(count -> tasksLabel.setText("下载任务  " + count));
+        musicPanel.setShowDownloadsAction(() -> pages.setSelectedIndex(2));
         root.add(pages, BorderLayout.CENTER);
         setContentPane(root);
     }
 
     public void showAccountPage() {
-        pages.setSelectedComponent(accountPanel);
+        accountMenu.showAccount();
     }
 
     private JPanel createHeader() {
         var header = band(new BorderLayout(12, 0), DarkTheme.TITLE_BAR);
         header.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createMatteBorder(0, 0, 1, 0, DarkTheme.BORDER),
-                BorderFactory.createEmptyBorder(10, 14, 10, 14)
+                BorderFactory.createEmptyBorder(),
+                BorderFactory.createEmptyBorder(18, 24, 12, 24)
         ));
 
         var brand = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
@@ -161,13 +163,12 @@ public final class MainWindow extends JFrame {
         names.setOpaque(false);
         var title = new JLabel("NCM Breaker");
         title.setForeground(DarkTheme.TEXT);
-        title.setFont(title.getFont().deriveFont(Font.PLAIN, 17f));
+        title.setFont(title.getFont().deriveFont(Font.PLAIN, 20f));
         names.add(title, BorderLayout.CENTER);
-        var subtitle = mutedLabel("批量转换器");
-        names.add(subtitle, BorderLayout.SOUTH);
         brand.add(names);
 
         header.add(brand, BorderLayout.WEST);
+        header.add(accountMenu, BorderLayout.EAST);
         return header;
     }
 
@@ -462,7 +463,7 @@ public final class MainWindow extends JFrame {
     private void closeWindow() {
         closing = true;
         musicPanel.close();
-        accountPanel.close();
+        accountMenu.close();
         if (conversionWorker != null) {
             conversionWorker.requestCancellation();
             cancelButton.setEnabled(false);

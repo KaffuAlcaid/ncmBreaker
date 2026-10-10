@@ -60,10 +60,11 @@ final class MusicController implements AutoCloseable {
         load(() -> new MusicService(current).playlist(playlist.id(), count -> { }));
     }
 
-    void open(String value) {
+    void open(String value, boolean songId) {
         if (session == null) { view.showStatus("请先登录网易云账号"); return; }
         try {
-            var link = MusicLink.parse(value);
+            var link = MusicLink.parse(value, songId);
+            view.selectLinkType(link.song());
             var current = session;
             if (link.song()) {
                 load(() -> {

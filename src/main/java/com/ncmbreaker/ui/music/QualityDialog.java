@@ -1,6 +1,7 @@
 package com.ncmbreaker.ui.music;
 
 import com.ncmbreaker.netease.auth.LoginSession;
+import com.ncmbreaker.ui.UiStyle;
 import com.ncmbreaker.netease.music.AudioQuality;
 import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.netease.music.MusicModels.*;
@@ -70,6 +71,9 @@ final class QualityDialog extends JDialog {
         footer.add(status, BorderLayout.NORTH);
         var actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         var cancel = new JButton("取消");
+        UiStyle.button(cancel);
+        UiStyle.button(download);
+        UiStyle.button(retry);
         cancel.addActionListener(event -> dispose());
         download.addActionListener(event -> authorize());
         retry.addActionListener(event -> load());

@@ -7,9 +7,13 @@ import java.nio.charset.StandardCharsets;
 
 public record MusicLink(long id, boolean song) {
     public static MusicLink parse(String input) throws MusicException {
+        return parse(input, false);
+    }
+
+    public static MusicLink parse(String input, boolean songId) throws MusicException {
         var text = input.strip().replace("\\&", "&");
         try {
-            if (text.matches("[1-9][0-9]*")) return new MusicLink(Long.parseLong(text), false);
+            if (text.matches("[1-9][0-9]*")) return new MusicLink(Long.parseLong(text), songId);
             var uri = URI.create(text);
             if (!"music.163.com".equalsIgnoreCase(uri.getHost())) throw new IllegalArgumentException();
             var path = uri.getPath();
@@ -31,6 +35,6 @@ public record MusicLink(long id, boolean song) {
         } catch (IllegalArgumentException ignored) {
             // Present one actionable message for malformed or unrelated links.
         }
-        throw new MusicException("请输入网易云歌单 ID、歌单链接或歌曲链接。");
+        throw new MusicException(songId ? "请输入网易云歌曲链接或歌曲 ID。" : "请输入网易云歌单链接或歌单 ID。");
     }
 }

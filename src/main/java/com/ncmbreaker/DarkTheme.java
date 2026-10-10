@@ -55,7 +55,7 @@ final class DarkTheme {
         putColor("TabbedPane.contentAreaColor", WINDOW);
         putColor("TabbedPane.focus", PRIMARY);
         putColor("TabbedPane.unselectedBackground", SURFACE_SOFT);
-        putColor("TabbedPane.tabAreaBackground", WINDOW);
+        putColor("TabbedPane.tabAreaBackground", TITLE_BAR);
         putColor("TabbedPane.highlight", BORDER);
         putColor("TabbedPane.light", BORDER);
         putColor("TabbedPane.shadow", BORDER);
@@ -104,6 +104,16 @@ final class DarkTheme {
         putColor("List.foreground", TEXT);
         putColor("List.selectionBackground", new Color(0x2f, 0x65, 0x66));
         putColor("List.selectionForeground", TEXT);
+        putColor("PopupMenu.background", SURFACE);
+        putColor("MenuItem.background", SURFACE);
+        putColor("MenuItem.foreground", TEXT);
+        putColor("MenuItem.selectionBackground", new Color(0x2b, 0x3d, 0x40));
+        putColor("MenuItem.selectionForeground", TEXT);
+        putColor("MenuItem.disabledForeground", MUTED);
+        putColor("CheckBoxMenuItem.background", SURFACE);
+        putColor("CheckBoxMenuItem.foreground", TEXT);
+        putColor("CheckBoxMenuItem.selectionBackground", new Color(0x2b, 0x3d, 0x40));
+        putColor("CheckBoxMenuItem.selectionForeground", TEXT);
 
         var baseFont = new Font("Microsoft YaHei UI", Font.PLAIN, 13);
         if (baseFont.canDisplayUpTo("中文日文かな") >= 0) {

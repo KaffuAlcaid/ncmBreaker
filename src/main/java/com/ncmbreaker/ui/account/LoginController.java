@@ -52,6 +52,14 @@ final class LoginController implements AutoCloseable {
         restore();
     }
 
+    void deactivate() {
+        activated = false;
+        if (!restoring && (session == null || session.account() == null)) {
+            endAttempt();
+            view.showIdle();
+        }
+    }
+
     private void restore() {
         if (closed) return;
         endAttempt();

@@ -3,7 +3,6 @@ package com.ncmbreaker.netease.http;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.ncmbreaker.netease.crypto.NeteaseCrypto;
@@ -22,7 +21,6 @@ import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -55,8 +53,6 @@ public final class NeteaseClient implements AutoCloseable {
             .build();
     private final SessionCookies cookieStore = new SessionCookies();
     private final CookieManager cookies = new CookieManager(cookieStore, CookiePolicy.ACCEPT_ORIGINAL_SERVER);
-    private final List<ApiObserver> observers = ServiceLoader.load(ApiObserver.class).stream()
-            .map(ServiceLoader.Provider::get).toList();
     private String deviceId = UUID.randomUUID().toString().replace("-", "");
     private SessionWriter sessionWriter;
     private boolean closed;
@@ -100,54 +96,32 @@ public final class NeteaseClient implements AutoCloseable {
             throw new IOException("无法创建登录请求。", exception);
         }
         var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(form)).build();
-        var started = System.nanoTime();
-        var status = 0;
-        Map<String, List<String>> responseHeaders = Map.of();
-        JsonElement responseBody = JsonNull.INSTANCE;
-        var failure = "";
-        try {
-            var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
-            status = response.statusCode();
-            responseHeaders = response.headers().map();
-            try (var raw = response.body()) {
-                var bytes = readResponse(raw, response.headers().firstValue("Content-Encoding").orElse(""));
-                try {
-                    responseBody = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
-                } catch (RuntimeException exception) {
-                    throw new IOException("服务器未返回有效数据（HTTP " + status + "）。", exception);
-                }
-            }
-            synchronized (this) {
-                ensureOpen();
-                cookies.put(endpoint, responseHeaders);
-                if (sessionWriter != null && responseHeaders.keySet().stream().anyMatch(name -> name.equalsIgnoreCase("set-cookie"))) {
-                    persistSession();
-                }
-            }
-            if (status < 200 || status >= 300) {
-                throw new IOException("请求失败（HTTP " + status + "），请稍后重试。");
-            }
-            if (!responseBody.isJsonObject()) {
-                throw new IOException("服务器返回的数据格式无法识别。");
-            }
-            return responseBody.getAsJsonObject();
-        } catch (IOException | InterruptedException exception) {
-            failure = exception.getClass().getSimpleName();
-            throw exception;
-        } finally {
-            if (!observers.isEmpty()) {
-                var exchange = new ApiObserver.Exchange(path, protocol.name(), payload.deepCopy(),
-                        request.headers().map(), status, responseHeaders, responseBody.deepCopy(),
-                        (System.nanoTime() - started) / 1_000_000, failure);
-                for (var observer : observers) {
-                    try {
-                        observer.onExchange(exchange);
-                    } catch (RuntimeException ignored) {
-                        // Optional observers must not alter the login result.
-                    }
-                }
+        var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        var status = response.statusCode();
+        var responseHeaders = response.headers().map();
+        JsonElement responseBody;
+        try (var raw = response.body()) {
+            var bytes = readResponse(raw, response.headers().firstValue("Content-Encoding").orElse(""));
+            try {
+                responseBody = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
+            } catch (RuntimeException exception) {
+                throw new IOException("服务器未返回有效数据（HTTP " + status + "）。", exception);
             }
         }
+        synchronized (this) {
+            ensureOpen();
+            cookies.put(endpoint, responseHeaders);
+            if (sessionWriter != null && responseHeaders.keySet().stream().anyMatch(name -> name.equalsIgnoreCase("set-cookie"))) {
+                persistSession();
+            }
+        }
+        if (status < 200 || status >= 300) {
+            throw new IOException("请求失败（HTTP " + status + "），请稍后重试。");
+        }
+        if (!responseBody.isJsonObject()) {
+            throw new IOException("服务器返回的数据格式无法识别。");
+        }
+        return responseBody.getAsJsonObject();
     }
 
     private static byte[] readResponse(java.io.InputStream raw, String encoding) throws IOException, InterruptedException {

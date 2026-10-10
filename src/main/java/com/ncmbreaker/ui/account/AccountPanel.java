@@ -1,6 +1,7 @@
 package com.ncmbreaker.ui.account;
 
 import com.ncmbreaker.netease.auth.LoginSession;
+import com.ncmbreaker.ui.UiStyle;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
@@ -28,6 +29,7 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     private final JButton primary = new JButton("扫码登录");
     private final JButton secondary = new JButton("取消");
     private final LoginController controller = new LoginController(this);
+    private boolean saveWarning;
     private java.util.function.Consumer<LoginSession> sessionListener = session -> { };
 
     public void setSessionListener(java.util.function.Consumer<LoginSession> listener) {
@@ -81,6 +83,7 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
         actions.setMinimumSize(new Dimension(300, 38));
         actions.setMaximumSize(new Dimension(440, 38));
         for (var button : new JButton[]{primary, secondary}) {
+            UiStyle.button(button);
             button.setPreferredSize(new Dimension(132, 36));
             button.setFocusPainted(false);
             actions.add(button);
@@ -101,6 +104,10 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     public void restoreLogin() {
         controller.initialize();
     }
+
+    public void deactivate() { controller.deactivate(); }
+
+    public void logout() { controller.cancelOrLogout(); }
 
     void showRestoring() {
         placeholder("正在恢复登录");
@@ -126,9 +133,12 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     }
 
     void showSaveWarning() {
+        saveWarning = true;
         status.setText("已登录，但登录状态未能保存。");
         status.setToolTipText("请检查用户目录的写入权限；下次启动需要重新扫码。");
     }
+
+    boolean hasSaveWarning() { return saveWarning; }
 
     void showIdle() {
         placeholder("尚未登录");
@@ -168,7 +178,9 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     }
 
     void showAccount(LoginSession.Account account) {
+        saveWarning = false;
         placeholder("已登录");
+        qr.setVisible(false);
         status.setText("登录成功");
         // Treat account names as plain text, including names beginning with HTML markup.
         accountName.putClientProperty("html.disable", Boolean.TRUE);
@@ -197,6 +209,7 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     }
 
     private void placeholder(String text) {
+        qr.setVisible(true);
         qr.setIcon(null);
         qr.setText(text);
         status.setToolTipText(null);
