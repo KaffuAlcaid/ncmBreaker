@@ -17,9 +17,14 @@
             <version>3.0.1</version>
         </dependency>
         <dependency>
-            <groupId>org.apache.commons</groupId>
-            <artifactId>commons-csv</artifactId>
-            <version>1.14.1</version>
+            <groupId>org.dhatim</groupId>
+            <artifactId>fastexcel</artifactId>
+            <version>0.20.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.dhatim</groupId>
+            <artifactId>fastexcel-reader</artifactId>
+            <version>0.20.2</version>
         </dependency>
         <dependency>
             <groupId>com.google.code.gson</groupId>
@@ -100,6 +105,12 @@
                                 </filter>
                             </filters>
                             <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/LICENSE</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/LICENSE.txt</resource>
+                                </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer"/>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">

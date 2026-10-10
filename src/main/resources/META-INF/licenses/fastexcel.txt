@@ -1,0 +1,4 @@
+Fastexcel Writer and Reader 0.20.2
+Source: https://github.com/dhatim/fastexcel
+License: Apache License, Version 2.0
+The license text is included in apache-2.0.txt.

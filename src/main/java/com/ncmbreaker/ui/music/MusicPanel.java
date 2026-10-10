@@ -4,6 +4,7 @@ import com.ncmbreaker.netease.auth.LoginSession;
 import com.ncmbreaker.netease.music.MusicModels.*;
 import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.playlist.MusicLink;
+import com.ncmbreaker.playlist.PlaylistWorkbook;
 import com.ncmbreaker.ui.UiStyle;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -16,6 +17,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -41,9 +43,13 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private final JLabel status = new JLabel("请先登录网易云账号");
     private final JButton refresh = UiStyle.button("\u21bb");
     private final JButton open = UiStyle.button("获取歌曲");
+    private final JButton export = UiStyle.button("导出歌单");
     private final DownloadPanel downloads = new DownloadPanel(queue, this::chooseQuality, this::outputDirectory);
     private final List<QualityDialog> dialogs = new ArrayList<>();
     private List<Playlist> playlists = List.of();
+    private PlaylistContent currentContent;
+    private boolean songsLoading;
+    private boolean exporting;
     private String accountName = "";
     private boolean changingList;
     private boolean closed;
@@ -105,8 +111,12 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         var importButton = UiStyle.button("导入歌单");
         importButton.setIcon(UIManager.getIcon("FileView.fileIcon"));
         importButton.addActionListener(event -> importPlaylist());
+        export.setIcon(UIManager.getIcon("FileView.floppyDriveIcon"));
+        export.setToolTipText("将完整歌单导出为 XLSX");
+        export.addActionListener(event -> exportPlaylist());
         open.setPreferredSize(new Dimension(108, 42));
         importButton.setPreferredSize(new Dimension(120, 42));
+        export.setPreferredSize(new Dimension(120, 42));
         open.addActionListener(event -> controller.open(link.getText(), single.isSelected()));
         link.addActionListener(event -> controller.open(link.getText(), single.isSelected()));
         link.getDocument().addDocumentListener(new DocumentListener() {
@@ -123,6 +133,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         updateLinkType();
         actions.add(open);
         actions.add(importButton);
+        actions.add(export);
         bar.add(actions, BorderLayout.EAST);
         return bar;
     }
@@ -305,10 +316,40 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private void importPlaylist() {
         var chooser = new JFileChooser();
         chooser.setDialogTitle("导入歌单");
-        chooser.setFileFilter(new FileNameExtensionFilter("歌单文件 (*.csv, *.json)", "csv", "json"));
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel 歌单 (*.xlsx)", "xlsx"));
+        chooser.setAcceptAllFileFilterUsed(false);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             controller.importFile(chooser.getSelectedFile().toPath());
         }
+    }
+
+    private void exportPlaylist() {
+        var content = currentContent;
+        if (content == null || songsLoading || exporting) return;
+        var chooser = new JFileChooser(output.getText());
+        chooser.setDialogTitle("导出歌单");
+        chooser.setFileFilter(new FileNameExtensionFilter("Excel 歌单 (*.xlsx)", "xlsx"));
+        chooser.setAcceptAllFileFilterUsed(false);
+        chooser.setSelectedFile(new java.io.File(chooser.getCurrentDirectory(), PlaylistWorkbook.fileName(content)));
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        var path = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+        if (!path.getFileName().toString().toLowerCase(java.util.Locale.ROOT).endsWith(".xlsx")) {
+            path = path.resolveSibling(path.getFileName() + ".xlsx");
+        }
+        boolean overwrite = Files.exists(path);
+        if (overwrite && JOptionPane.showConfirmDialog(this, "文件已存在，是否覆盖？\n" + path,
+                "导出歌单", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
+        controller.exportFile(path, content, overwrite);
+    }
+
+    void exporting(boolean value) {
+        exporting = value;
+        updateExport();
+        if (value) showStatus("正在导出歌单");
+    }
+
+    private void updateExport() {
+        export.setEnabled(!closed && !exporting && !songsLoading && currentContent != null);
     }
 
     private void selectDirectory() {
@@ -323,6 +364,9 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     }
 
     void resetAccount(LoginSession.Account value) {
+        currentContent = null;
+        songsLoading = false;
+        updateExport();
         playlists = List.of();
         changingList = true; playlistModel.clear(); changingList = false;
         if (songTable.isEditing()) songTable.getCellEditor().cancelCellEditing();
@@ -339,6 +383,8 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         if (loading) showStatus("正在读取我的歌单");
     }
     void songsLoading(boolean loading) {
+        songsLoading = loading;
+        updateExport();
         if (songTable.isEditing()) songTable.getCellEditor().cancelCellEditing();
         songTable.setEnabled(!loading);
         if (loading) showStatus("正在读取歌曲");
@@ -381,6 +427,8 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         changingList = false;
         var playlist = playlists.stream().filter(item -> item.id() == content.playlist().id())
                 .findFirst().orElse(content.playlist());
+        currentContent = new PlaylistContent(playlist, content.songs(), content.expectedCount());
+        updateExport();
         title.setText(playlist.category() == Category.LIKED ? "喜欢的音乐" : playlist.name());
         title.setToolTipText(playlist.name());
         long missing = content.songs().stream().filter(song -> !song.detailAvailable()).count();

@@ -5,7 +5,7 @@ import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.netease.music.MusicModels.*;
 import com.ncmbreaker.netease.music.MusicService;
 import com.ncmbreaker.playlist.MusicLink;
-import com.ncmbreaker.playlist.PlaylistImport;
+import com.ncmbreaker.playlist.PlaylistWorkbook;
 import javax.swing.SwingWorker;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,6 +18,7 @@ final class MusicController implements AutoCloseable {
     private LoginSession session;
     private SwingWorker<?, ?> libraryWorker;
     private SwingWorker<?, ?> songsWorker;
+    private SwingWorker<?, ?> exportWorker;
     private long sessionGeneration;
     private long songsGeneration;
     private boolean closed;
@@ -75,7 +76,29 @@ final class MusicController implements AutoCloseable {
         } catch (MusicException exception) { view.showStatus(exception.getMessage()); }
     }
 
-    void importFile(Path path) { load(() -> PlaylistImport.read(path)); }
+    void importFile(Path path) { load(() -> PlaylistWorkbook.read(path)); }
+
+    void exportFile(Path path, PlaylistContent content, boolean overwrite) {
+        if (closed || exportWorker != null) return;
+        view.exporting(true);
+        exportWorker = new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() throws Exception {
+                PlaylistWorkbook.write(path, content, overwrite);
+                return null;
+            }
+            @Override protected void done() {
+                exportWorker = null;
+                if (closed) return;
+                view.exporting(false);
+                try {
+                    get();
+                    view.showStatus("已导出 " + content.songs().size() + " 首歌曲：" + path);
+                } catch (CancellationException ignored) { }
+                catch (Exception exception) { view.showStatus("导出失败，请检查保存目录权限或文件占用情况。"); }
+            }
+        };
+        exportWorker.execute();
+    }
 
     void clearSongs() {
         songsGeneration++;
@@ -110,5 +133,6 @@ final class MusicController implements AutoCloseable {
         closed = true; sessionGeneration++; songsGeneration++;
         if (libraryWorker != null) libraryWorker.cancel(true);
         if (songsWorker != null) songsWorker.cancel(true);
+        if (exportWorker != null) exportWorker.cancel(true);
     }
 }

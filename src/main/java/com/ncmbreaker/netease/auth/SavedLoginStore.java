@@ -4,8 +4,10 @@ import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
 import com.ncmbreaker.netease.http.SessionState;
 import java.io.IOException;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -24,17 +26,53 @@ import java.util.List;
 
 final class SavedLoginStore {
     private static final Gson JSON = new Gson();
-    private final Path directory = Path.of(System.getProperty("user.home"), ".ncm-breaker");
+    private final Path directory = applicationDirectory().resolve("session");
     private final Path file = directory.resolve("session.json");
 
     SessionState load() throws IOException {
-        if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) return null;
+        if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) return migrateLegacy();
         secureDirectory();
-        if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS) || Files.size(file) > 256 * 1024) {
+        return read(file);
+    }
+
+    private static Path applicationDirectory() {
+        var launcher = System.getProperty("jpackage.app-path");
+        if (launcher != null && !launcher.isBlank()) {
+            return Path.of(launcher).toAbsolutePath().normalize().getParent();
+        }
+        try {
+            var location = Path.of(SavedLoginStore.class.getProtectionDomain().getCodeSource()
+                    .getLocation().toURI()).toAbsolutePath().normalize();
+            return Files.isDirectory(location) ? location : location.getParent();
+        } catch (URISyntaxException exception) {
+            throw new IllegalStateException("无法确定程序所在目录。", exception);
+        }
+    }
+
+    private SessionState migrateLegacy() throws IOException {
+        var legacyDirectory = Path.of(System.getProperty("user.home"), ".ncm-breaker");
+        var legacyFile = legacyDirectory.resolve("session.json");
+        if (Files.notExists(legacyFile, LinkOption.NOFOLLOW_LINKS)) return null;
+        if (!Files.isDirectory(legacyDirectory, LinkOption.NOFOLLOW_LINKS)) {
             throw new IOException("保存的登录状态无法读取，请重新扫码。");
         }
-        secure(file, false);
-        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+        var state = read(legacyFile);
+        save(state);
+        Files.deleteIfExists(legacyFile);
+        try {
+            Files.deleteIfExists(legacyDirectory);
+        } catch (DirectoryNotEmptyException ignored) {
+            // Leave any unrelated files in the old directory intact.
+        }
+        return state;
+    }
+
+    private SessionState read(Path source) throws IOException {
+        if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || Files.size(source) > 256 * 1024) {
+            throw new IOException("保存的登录状态无法读取，请重新扫码。");
+        }
+        secure(source, false);
+        try (var reader = Files.newBufferedReader(source, StandardCharsets.UTF_8)) {
             var state = JSON.fromJson(reader, SessionState.class);
             if (state == null || state.version() != 1 || state.deviceId() == null
                     || !state.deviceId().matches("[a-fA-F0-9]{32}")) {
@@ -80,12 +118,12 @@ final class SavedLoginStore {
     }
 
     private FileAttribute<?> permissions(boolean folder) throws IOException {
-        var home = directory.getParent();
-        if (Files.getFileAttributeView(home, PosixFileAttributeView.class) != null) {
+        var parent = directory.getParent();
+        if (Files.getFileAttributeView(parent, PosixFileAttributeView.class) != null) {
             return PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString(folder ? "rwx------" : "rw-------"));
         }
-        if (Files.getFileAttributeView(home, AclFileAttributeView.class) != null) {
-            var owner = home.getFileSystem().getUserPrincipalLookupService()
+        if (Files.getFileAttributeView(parent, AclFileAttributeView.class) != null) {
+            var owner = parent.getFileSystem().getUserPrincipalLookupService()
                     .lookupPrincipalByName(System.getProperty("user.name"));
             var entry = AclEntry.newBuilder().setType(AclEntryType.ALLOW).setPrincipal(owner)
                     .setPermissions(EnumSet.allOf(AclEntryPermission.class));

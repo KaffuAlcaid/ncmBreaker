@@ -16,11 +16,15 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicInteger;
 
 final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
+    private static final int MAX_CONCURRENT_DOWNLOADS = 3;
     private static final String[] COLUMNS = {"歌曲", "音质", "进度", "状态"};
     private final List<Task> tasks = new ArrayList<>();
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(task -> new Thread(task, "music-download"));
+    private final AtomicInteger workerIds = new AtomicInteger();
+    private final ExecutorService executor = Executors.newFixedThreadPool(MAX_CONCURRENT_DOWNLOADS,
+            task -> new Thread(task, "music-download-" + workerIds.incrementAndGet()));
     private volatile boolean closed;
 
     static final class Task {

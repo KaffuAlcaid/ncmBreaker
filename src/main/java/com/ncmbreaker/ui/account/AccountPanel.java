@@ -135,7 +135,7 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
     void showSaveWarning() {
         saveWarning = true;
         status.setText("已登录，但登录状态未能保存。");
-        status.setToolTipText("请检查用户目录的写入权限；下次启动需要重新扫码。");
+        status.setToolTipText("请检查程序所在目录的写入权限；下次启动需要重新扫码。");
     }
 
     boolean hasSaveWarning() { return saveWarning; }

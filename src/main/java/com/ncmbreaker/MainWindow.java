@@ -627,8 +627,13 @@ public final class MainWindow extends JFrame {
 
     private static JButton primaryButton(String text) {
         var button = button(text);
+        button.setFont(button.getFont().deriveFont(Font.BOLD));
         button.setBackground(DarkTheme.PRIMARY);
         button.setForeground(DarkTheme.PRIMARY_TEXT);
+        button.addPropertyChangeListener("enabled", event -> {
+            button.setBackground(button.isEnabled() ? DarkTheme.PRIMARY : DarkTheme.SURFACE);
+            button.setForeground(button.isEnabled() ? DarkTheme.PRIMARY_TEXT : DarkTheme.MUTED);
+        });
         button.setOpaque(true);
         return button;
     }

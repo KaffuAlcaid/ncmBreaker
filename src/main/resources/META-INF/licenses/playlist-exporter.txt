@@ -1,7 +1,7 @@
 Netease-Playlist-Exporter
 Source: https://github.com/LwhJesse/Netease-Playlist-Exporter
 Version: 0.1.0
-The playlist retrieval sequence and master file format are based on this project.
+The playlist retrieval sequence is based on this project.
 
 MIT License
 

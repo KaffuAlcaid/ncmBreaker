@@ -26,6 +26,7 @@ public final class AudioDownloader {
     public record Result(Path file, String format, String warning) { }
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NEVER).build();
+    private static final Object OUTPUT_LOCK = new Object();
 
     public Result download(AuthorizedDownload authorization, Song song, Path directory,
                            boolean tags, boolean cover, DownloadCancellation cancellation, Progress progress,
@@ -54,7 +55,10 @@ public final class AudioDownloader {
                 var name = base + (number == 0 ? "" : " (" + number + ")") + "." + format;
                 var target = directory.resolve(name);
                 try {
-                    Files.move(temporary, target);
+                    synchronized (OUTPUT_LOCK) {
+                        cancellation.check();
+                        Files.move(temporary, target);
+                    }
                     return new Result(target, format, warning);
                 } catch (FileAlreadyExistsException ignored) {
                     // Another completed job may have claimed the same filename.

@@ -83,3 +83,5 @@ NCM Breaker 是独立开发的开源项目，与网易云音乐及其关联方�
 由 [KaffuAlcaid](https://github.com/KaffuAlcaid) 开发维护
 
 感谢 [charlotte-xiao/NCM2MP3](https://github.com/charlotte-xiao/NCM2MP3) 对经典 NCM 格式的分析。本项目参考了其中的格式和算法说明，代码、界面及其他功能均重新实现
+
+感谢 [LwhJesse/Netease-Playlist-Exporter](https://github.com/LwhJesse/Netease-Playlist-Exporter) 提供的歌单获取与数据导出思路。本项目以 Java 实现相关功能，歌单导入与导出统一使用 XLSX 格式

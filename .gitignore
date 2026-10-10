@@ -7,6 +7,9 @@
 /target/
 /local-diagnostics/
 /.ncm-breaker/
+**/session/session.json
+**/session/session-*.tmp
+.ncm-breaker-playlist-*.tmp
 
 /Java/
 
