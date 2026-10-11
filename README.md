@@ -12,13 +12,38 @@ NCM Breaker 支持网易云音乐下载、歌单管理和本地 NCM 文件转换
 
 ## 开始使用
 
-Windows 解压后运行 `NcmBreaker.exe`，Linux 运行 `NcmBreaker/bin/NcmBreaker`。发行包自带 Java，通用 JAR 需 Java 17 或更高版本
+Windows 解压后运行 `NcmBreaker.exe`，Linux 运行 `NcmBreaker/bin/NcmBreaker`。发行包自带 Java
 
 扫码登录后，在“音乐下载”中选歌并选择音质下载，歌单通过“导入歌单”和“导出歌单”读写 XLSX
 
 本地 NCM 在“本地转换”中添加文件，选择输出目录后点击“开始转换”
 
 登录状态保存在程序同目录的 `session/session.json`，更新时保留 `session` 文件夹即可
+
+<details>
+<summary>使用通用 JAR 与命令行</summary>
+
+安装 Java 17 或更高版本，在 JAR 所在目录打开终端
+
+启动图形界面：
+
+```text
+java -jar NcmBreaker-0.2.0.jar
+```
+
+检查 NCM 文件信息：
+
+```text
+java -jar NcmBreaker-0.2.0.jar --inspect "音乐目录"
+```
+
+将 NCM 文件或文件夹转换到指定目录：
+
+```text
+java -jar NcmBreaker-0.2.0.jar -o "输出目录" "音乐目录"
+```
+
+</details>
 
 ## 文档与反馈
 
