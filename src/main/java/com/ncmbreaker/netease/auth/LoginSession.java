@@ -15,7 +15,7 @@ public final class LoginSession implements AutoCloseable {
     public record Challenge(String key, String url) {
     }
 
-    public record Account(long userId, String nickname, int vipType) {
+    public record Account(long userId, String nickname) {
     }
 
     private final NeteaseClient client = new NeteaseClient();
@@ -80,7 +80,7 @@ public final class LoginSession implements AutoCloseable {
         if (id <= 0 || accountData == null) {
             throw new ExpiredException();
         }
-        account = new Account(id, string(profile, "nickname", "网易云用户"), integer(profile, "vipType", 0));
+        account = new Account(id, string(profile, "nickname", "网易云用户"));
         return account;
     }
 
