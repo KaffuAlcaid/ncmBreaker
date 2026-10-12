@@ -25,6 +25,7 @@ final class MusicController implements AutoCloseable {
 
     MusicController(MusicPanel view) { this.view = view; }
     LoginSession session() { return session; }
+    boolean isBusy() { return libraryWorker != null || songsWorker != null || exportWorker != null; }
 
     void setSession(LoginSession session) {
         sessionGeneration++; songsGeneration++;
@@ -93,6 +94,7 @@ final class MusicController implements AutoCloseable {
                 try {
                     get();
                     view.showStatus("已导出 " + content.songs().size() + " 首歌曲：" + path);
+                    if (!content.songs().isEmpty()) view.taskSucceeded();
                 } catch (CancellationException ignored) { }
                 catch (Exception exception) { view.showStatus("导出失败，请检查保存目录权限或文件占用情况。"); }
             }

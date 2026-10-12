@@ -3,6 +3,7 @@ package com.ncmbreaker;
 import com.ncmbreaker.ui.WorkspaceTabs;
 import com.ncmbreaker.ui.account.AccountMenu;
 import com.ncmbreaker.ui.music.MusicPanel;
+import com.ncmbreaker.ui.support.StarInvitation;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractButton;
 import javax.swing.ImageIcon;
@@ -76,6 +77,7 @@ public final class MainWindow extends JFrame {
     private final JTabbedPane pages = new WorkspaceTabs();
     private final AccountMenu accountMenu = new AccountMenu();
     private final MusicPanel musicPanel = new MusicPanel();
+    private final StarInvitation starInvitation;
 
     private SwingWorker<?, ?> scanWorker;
     private ConversionWorker conversionWorker;
@@ -83,8 +85,10 @@ public final class MainWindow extends JFrame {
 
     public MainWindow() {
         super("NCM Breaker");
+        starInvitation = new StarInvitation(this, () -> closing || busy() || musicPanel.isBusy());
         table = createTable();
         musicPanel.setLoginAction(this::showAccountPage);
+        musicPanel.setTaskSuccessListener(starInvitation::taskSucceeded);
         accountMenu.setSessionListener(musicPanel::setSession);
         configureWindow();
         buildLayout();
@@ -103,6 +107,7 @@ public final class MainWindow extends JFrame {
 
             @Override
             public void windowClosed(WindowEvent event) {
+                starInvitation.close();
                 musicPanel.close();
                 accountMenu.close();
             }
@@ -462,6 +467,7 @@ public final class MainWindow extends JFrame {
 
     private void closeWindow() {
         closing = true;
+        starInvitation.close();
         musicPanel.close();
         accountMenu.close();
         if (conversionWorker != null) {
@@ -883,6 +889,7 @@ public final class MainWindow extends JFrame {
         private final NcmFileIO.DecodeOptions options;
         private volatile boolean cancellationRequested;
         private volatile Thread workerThread;
+        private boolean succeeded;
 
         private ConversionWorker(
                 List<FileEntry> entries,
@@ -918,6 +925,7 @@ public final class MainWindow extends JFrame {
                         if (result.outcome() == NcmFileIO.DecodeOutcome.SKIPPED) {
                             publish(new ProgressUpdate(entry, RowState.SKIPPED, 100, "目标文件已存在", result.output()));
                         } else {
+                            succeeded = true;
                             var message = "flac".equals(result.audioFormat()) && (options.writeBasicTags() || options.embedCover())
                                     ? "已完成，FLAC 标签保持原样"
                                     : "已完成";
@@ -964,6 +972,8 @@ public final class MainWindow extends JFrame {
             updateControls();
             if (closing) {
                 dispose();
+            } else if (!cancellationRequested && succeeded) {
+                starInvitation.taskSucceeded();
             }
         }
     }

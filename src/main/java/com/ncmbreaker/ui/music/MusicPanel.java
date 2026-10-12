@@ -55,6 +55,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private boolean closed;
     private Runnable loginAction = () -> { };
     private Runnable showDownloadsAction = () -> { };
+    private Runnable taskSuccessListener = () -> { };
     private IntConsumer taskCountListener = count -> { };
 
     public MusicPanel() {
@@ -68,11 +69,15 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         add(split, BorderLayout.CENTER);
         add(destination(), BorderLayout.SOUTH);
         queue.addTableModelListener(event -> taskCountListener.accept(queue.getRowCount()));
+        queue.setSuccessListener(this::taskSucceeded);
         resetAccount(null);
     }
 
     public void setLoginAction(Runnable action) { loginAction = action; }
     public void setShowDownloadsAction(Runnable action) { showDownloadsAction = action; }
+    public void setTaskSuccessListener(Runnable listener) { taskSuccessListener = listener; }
+    public boolean isBusy() { return controller.isBusy() || queue.hasPendingTasks(); }
+    void taskSucceeded() { if (!closed) taskSuccessListener.run(); }
     public void setTaskCountListener(IntConsumer listener) {
         taskCountListener = listener;
         listener.accept(queue.getRowCount());

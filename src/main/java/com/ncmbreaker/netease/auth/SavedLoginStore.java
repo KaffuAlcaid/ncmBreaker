@@ -2,9 +2,9 @@ package com.ncmbreaker.netease.auth;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonParseException;
+import com.ncmbreaker.app.ApplicationPaths;
 import com.ncmbreaker.netease.http.SessionState;
 import java.io.IOException;
-import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.FileAlreadyExistsException;
@@ -25,27 +25,13 @@ import java.util.List;
 
 final class SavedLoginStore {
     private static final Gson JSON = new Gson();
-    private final Path directory = applicationDirectory().resolve("session");
+    private final Path directory = ApplicationPaths.directory().resolve("session");
     private final Path file = directory.resolve("session.json");
 
     SessionState load() throws IOException {
         if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) return null;
         secureDirectory();
         return read(file);
-    }
-
-    private static Path applicationDirectory() {
-        var launcher = System.getProperty("jpackage.app-path");
-        if (launcher != null && !launcher.isBlank()) {
-            return Path.of(launcher).toAbsolutePath().normalize().getParent();
-        }
-        try {
-            var location = Path.of(SavedLoginStore.class.getProtectionDomain().getCodeSource()
-                    .getLocation().toURI()).toAbsolutePath().normalize();
-            return Files.isDirectory(location) ? location : location.getParent();
-        } catch (URISyntaxException exception) {
-            throw new IllegalStateException("无法确定程序所在目录。", exception);
-        }
     }
 
     private SessionState read(Path source) throws IOException {

@@ -26,6 +26,7 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
     private final ExecutorService executor = Executors.newFixedThreadPool(MAX_CONCURRENT_DOWNLOADS,
             task -> new Thread(task, "music-download-" + workerIds.incrementAndGet()));
     private volatile boolean closed;
+    private Runnable successListener = () -> { };
 
     static final class Task {
         final LoginSession session;
@@ -60,6 +61,8 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
     }
 
     Task task(int index) { return tasks.get(index); }
+    void setSuccessListener(Runnable listener) { successListener = listener; }
+    boolean hasPendingTasks() { return tasks.stream().anyMatch(task -> !task.finished); }
     void cancel(int index) {
         var task = tasks.get(index);
         if (!task.finished) {
@@ -110,6 +113,7 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
             task.status = status; task.progress = progress; task.finished = finished; task.output = output;
             int row = tasks.indexOf(task);
             if (row >= 0) fireTableRowsUpdated(row, row);
+            if (!closed && finished && output != null && !task.cancellation.isCancelled()) successListener.run();
         });
     }
 

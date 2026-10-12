@@ -9,6 +9,7 @@
 /.ncm-breaker/
 **/session/session.json
 **/session/session-*.tmp
+**/config/star-invitation.json
 .ncm-breaker-playlist-*.tmp
 
 /Java/
