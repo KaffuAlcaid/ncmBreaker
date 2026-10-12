@@ -7,7 +7,6 @@ import java.io.IOException;
 import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
-import java.nio.file.DirectoryNotEmptyException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.LinkOption;
@@ -30,7 +29,7 @@ final class SavedLoginStore {
     private final Path file = directory.resolve("session.json");
 
     SessionState load() throws IOException {
-        if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) return migrateLegacy();
+        if (Files.notExists(file, LinkOption.NOFOLLOW_LINKS)) return null;
         secureDirectory();
         return read(file);
     }
@@ -47,24 +46,6 @@ final class SavedLoginStore {
         } catch (URISyntaxException exception) {
             throw new IllegalStateException("无法确定程序所在目录。", exception);
         }
-    }
-
-    private SessionState migrateLegacy() throws IOException {
-        var legacyDirectory = Path.of(System.getProperty("user.home"), ".ncm-breaker");
-        var legacyFile = legacyDirectory.resolve("session.json");
-        if (Files.notExists(legacyFile, LinkOption.NOFOLLOW_LINKS)) return null;
-        if (!Files.isDirectory(legacyDirectory, LinkOption.NOFOLLOW_LINKS)) {
-            throw new IOException("保存的登录状态无法读取，请重新扫码。");
-        }
-        var state = read(legacyFile);
-        save(state);
-        Files.deleteIfExists(legacyFile);
-        try {
-            Files.deleteIfExists(legacyDirectory);
-        } catch (DirectoryNotEmptyException ignored) {
-            // Leave any unrelated files in the old directory intact.
-        }
-        return state;
     }
 
     private SessionState read(Path source) throws IOException {
