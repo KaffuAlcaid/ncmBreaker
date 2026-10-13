@@ -76,6 +76,20 @@ jobs:
           mkdir -p dist release
           cp target/ncm-breaker.jar dist/ncm-breaker.jar
 
+      - name: Verify standalone CLI JAR
+        shell: bash
+        run: |
+          modules="$(jdeps --multi-release 17 --print-module-deps target/ncm-breaker-cli.jar)"
+          test "$modules" = "java.base"
+          java --limit-modules java.base -Djava.awt.headless=true -jar target/ncm-breaker-cli.jar --help
+
+      - name: Package standalone CLI JAR
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: cp target/ncm-breaker-cli.jar "release/NcmBreaker-$VERSION-cli.jar"
+
       - name: Package Windows application
         if: runner.os == 'Windows'
         shell: pwsh

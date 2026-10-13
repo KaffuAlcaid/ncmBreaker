@@ -81,6 +81,27 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
                 <version>3.4.2</version>
+                <executions>
+                    <execution>
+                        <id>cli-jar</id>
+                        <phase>package</phase>
+                        <goals><goal>jar</goal></goals>
+                        <configuration>
+                            <classifier>cli</classifier>
+                            <includes>
+                                <include>com/ncmbreaker/CliMain*.class</include>
+                                <include>com/ncmbreaker/NcmDecoder*.class</include>
+                                <include>com/ncmbreaker/NcmFileIO*.class</include>
+                                <include>com/ncmbreaker/Id3TagEditor*.class</include>
+                            </includes>
+                            <archive>
+                                <manifest>
+                                    <mainClass>com.ncmbreaker.CliMain</mainClass>
+                                </manifest>
+                            </archive>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
