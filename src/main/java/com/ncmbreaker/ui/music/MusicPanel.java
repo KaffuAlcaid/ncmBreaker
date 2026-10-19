@@ -14,12 +14,13 @@ import javax.swing.table.TableCellRenderer;
 import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.awt.event.ActionEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
+import java.util.Arrays;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.function.IntConsumer;
 
@@ -44,10 +45,18 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private final JButton refresh = UiStyle.button("\u21bb");
     private final JButton open = UiStyle.button("获取歌曲");
     private final JButton export = UiStyle.button("导出歌单");
+    private final JButton downloadAll = UiStyle.button("下载整个歌单");
+    private final JButton downloadSelected = UiStyle.button("下载所选");
+    private final JButton returnPlaylist = UiStyle.button("返回原歌单");
     private final DownloadPanel downloads = new DownloadPanel(queue, this::chooseQuality, this::outputDirectory);
-    private final List<QualityDialog> dialogs = new ArrayList<>();
+    private final List<JDialog> dialogs = new ArrayList<>();
+    private final ArrayDeque<DownloadQueue.BatchResult> batchResults = new ArrayDeque<>();
+    private final Timer resultTimer = new Timer(250, event -> showNextBatchResult());
     private List<Playlist> playlists = List.of();
     private PlaylistContent currentContent;
+    private PlaylistContent returnContent;
+    private boolean choosingBatch;
+    private boolean showingResult;
     private boolean songsLoading;
     private boolean exporting;
     private String accountName = "";
@@ -55,6 +64,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private boolean closed;
     private Runnable loginAction = () -> { };
     private Runnable showDownloadsAction = () -> { };
+    private Runnable showMusicAction = () -> { };
     private Runnable taskSuccessListener = () -> { };
     private IntConsumer taskCountListener = count -> { };
 
@@ -70,13 +80,21 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         add(destination(), BorderLayout.SOUTH);
         queue.addTableModelListener(event -> taskCountListener.accept(queue.getRowCount()));
         queue.setSuccessListener(this::taskSucceeded);
+        queue.setBatchListener(result -> {
+            if (closed || result.session() != controller.session()) return;
+            batchResults.addLast(result);
+            resultTimer.start();
+        });
         resetAccount(null);
     }
 
     public void setLoginAction(Runnable action) { loginAction = action; }
     public void setShowDownloadsAction(Runnable action) { showDownloadsAction = action; }
+    public void setShowMusicAction(Runnable action) { showMusicAction = action; }
     public void setTaskSuccessListener(Runnable listener) { taskSuccessListener = listener; }
-    public boolean isBusy() { return controller.isBusy() || queue.hasPendingTasks(); }
+    public boolean isBusy() {
+        return controller.isBusy() || queue.hasPendingTasks() || choosingBatch || showingResult || !batchResults.isEmpty();
+    }
     void taskSucceeded() { if (!closed) taskSuccessListener.run(); }
     public void setTaskCountListener(IntConsumer listener) {
         taskCountListener = listener;
@@ -88,6 +106,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         if (closed) return;
         var previous = controller.session();
         if (previous != null && previous != session) queue.cancelSession(previous);
+        batchResults.clear(); resultTimer.stop();
         for (var dialog : List.copyOf(dialogs)) dialog.dispose();
         controller.setSession(session);
     }
@@ -214,7 +233,28 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         filter.setPreferredSize(new Dimension(214, 40));
         search.add(filter);
         heading.add(search, BorderLayout.EAST);
-        panel.add(heading, BorderLayout.NORTH);
+        var top = new JPanel(new BorderLayout(0, 14));
+        top.add(heading, BorderLayout.NORTH);
+        var actions = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        downloadAll.setName("music.downloadAll");
+        downloadSelected.setName("music.downloadSelected");
+        downloadAll.setPreferredSize(new Dimension(132, 38));
+        downloadSelected.setPreferredSize(new Dimension(120, 38));
+        returnPlaylist.setPreferredSize(new Dimension(124, 38));
+        downloadAll.setToolTipText("下载当前完整歌单");
+        downloadSelected.setToolTipText("下载选中的歌曲");
+        downloadAll.addActionListener(event -> chooseBatch(true));
+        downloadSelected.addActionListener(event -> chooseBatch(false));
+        returnPlaylist.addActionListener(event -> {
+            var content = returnContent;
+            if (content == null) return;
+            controller.clearSongs();
+            showContent(content);
+        });
+        returnPlaylist.setVisible(false);
+        actions.add(downloadAll); actions.add(downloadSelected); actions.add(returnPlaylist);
+        top.add(actions, BorderLayout.SOUTH);
+        panel.add(top, BorderLayout.NORTH);
         configureSongTable();
         panel.add(UiStyle.scrollPane(songTable), BorderLayout.CENTER);
         return panel;
@@ -255,6 +295,10 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
 
     private void configureSongTable() {
         UiStyle.table(songTable, 66);
+        songTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
+        songTable.getSelectionModel().addListSelectionListener(event -> {
+            if (!event.getValueIsAdjusting()) updateBatchActions();
+        });
         songTable.setName("music.songs");
         songTable.setRowSorter(sorter);
         songTable.setDefaultRenderer(Song.class, new SongRenderer());
@@ -290,7 +334,8 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
                 .put(KeyStroke.getKeyStroke("ENTER"), "download-song");
         songTable.getActionMap().put("download-song", new AbstractAction() {
             @Override public void actionPerformed(ActionEvent event) {
-                if (songTable.getSelectedRow() >= 0) {
+                if (songTable.getSelectedRowCount() > 1) chooseBatch(false);
+                else if (songTable.getSelectedRow() >= 0) {
                     chooseQuality(songs.song(songTable.convertRowIndexToModel(songTable.getSelectedRow())));
                 }
             }
@@ -311,11 +356,87 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
             showStatus((added ? "已加入下载任务：" : "下载任务已存在：") + resolved.title() + " · " + quality);
             showDownloadsAction.run();
         });
+        showDialog(dialog);
+    }
+
+    private void chooseBatch(boolean entirePlaylist) {
+        var session = controller.session();
+        var content = currentContent;
+        if (closed || choosingBatch || songsLoading || content == null) return;
+        if (session == null || session.account() == null) {
+            showStatus("请先登录网易云账号"); loginAction.run(); return;
+        }
+        var selected = entirePlaylist ? content.songs() : Arrays.stream(songTable.getSelectedRows())
+                .mapToObj(row -> songs.song(songTable.convertRowIndexToModel(row))).toList();
+        var unique = new LinkedHashMap<Long, Song>();
+        for (var song : selected) unique.putIfAbsent(song.id(), song);
+        var snapshot = List.copyOf(unique.values());
+        if (snapshot.isEmpty()) return;
+        var original = returnContent == null ? content : returnContent;
+        var directory = outputDirectory();
+        boolean writeTags = tags.isSelected();
+        boolean writeCover = cover.isSelected();
+        choosingBatch = true;
+        updateBatchActions();
+        try {
+            var dialog = new BatchDownloadDialog(SwingUtilities.getWindowAncestor(this), content, snapshot, quality -> {
+                if (closed || controller.session() != session) return;
+                var batch = new DownloadQueue.Batch(session, content, original);
+                queue.addBatch(batch, snapshot, quality, directory, writeTags, writeCover);
+                showStatus(batch.tasks.isEmpty() ? "歌曲已在下载队列，未重复加入"
+                        : "已加入 " + batch.tasks.size() + " 首歌曲"
+                        + (batch.skipped == 0 ? "" : "，另有 " + batch.skipped + " 首已在下载队列"));
+                showDownloadsAction.run();
+            });
+            showDialog(dialog);
+        } finally {
+            choosingBatch = false;
+            updateBatchActions();
+        }
+    }
+
+    private void updateBatchActions() {
+        boolean available = !closed && !songsLoading && !choosingBatch && controller.session() != null
+                && currentContent != null && !currentContent.songs().isEmpty();
+        downloadAll.setEnabled(available);
+        int count = songTable.getSelectedRowCount();
+        downloadSelected.setEnabled(available && count > 0);
+        downloadSelected.setToolTipText(count > 0 ? "下载选中的 " + count + " 首歌曲" : "下载选中的歌曲");
+        returnPlaylist.setVisible(returnContent != null);
+    }
+
+    private void showDialog(JDialog dialog) {
         dialogs.add(dialog);
-        dialog.addWindowListener(new WindowAdapter() {
-            @Override public void windowClosed(WindowEvent event) { dialogs.remove(dialog); }
-        });
-        dialog.setVisible(true);
+        try { dialog.setVisible(true); }
+        finally { dialogs.remove(dialog); dialog.dispose(); }
+    }
+
+    private void showNextBatchResult() {
+        if (closed || batchResults.isEmpty()) { resultTimer.stop(); return; }
+        if (showingResult || !dialogs.isEmpty()) return;
+        var owner = SwingUtilities.getWindowAncestor(this);
+        if (owner == null || !owner.isShowing()) return;
+        for (var window : Window.getWindows()) {
+            if (window instanceof Dialog && window.isShowing()) return;
+        }
+        var result = batchResults.removeFirst();
+        if (result.session() != controller.session()) return;
+        showingResult = true;
+        try {
+            var dialog = new BatchResultDialog(owner, result);
+            showDialog(dialog);
+            if (dialog.showFailures() && !closed && result.session() == controller.session()) showFailedPlaylist(result);
+        } finally { showingResult = false; }
+    }
+
+    private void showFailedPlaylist(DownloadQueue.BatchResult result) {
+        controller.clearSongs();
+        var failed = result.failedSongs();
+        var playlist = new Playlist(0, "失败歌曲 · " + result.original().playlist().name(), failed.size(), "", Category.CREATED);
+        showContent(new PlaylistContent(playlist, failed, failed.size()));
+        returnContent = result.original();
+        updateBatchActions();
+        showMusicAction.run();
     }
 
     private void importPlaylist() {
@@ -370,6 +491,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
 
     void resetAccount(LoginSession.Account value) {
         currentContent = null;
+        returnContent = null;
         songsLoading = false;
         updateExport();
         playlists = List.of();
@@ -382,6 +504,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         showStatus(value == null ? "请先登录网易云账号" : "正在读取我的歌单");
         songTable.setEnabled(true);
         downloads.setSignedIn(value != null);
+        updateBatchActions();
     }
     void libraryLoading(boolean loading) {
         refresh.setEnabled(!loading && controller.session() != null);
@@ -389,6 +512,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     }
     void songsLoading(boolean loading) {
         songsLoading = loading;
+        updateBatchActions();
         updateExport();
         if (songTable.isEditing()) songTable.getCellEditor().cancelCellEditing();
         songTable.setEnabled(!loading);
@@ -397,10 +521,13 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     void showStatus(String text) { status.setText(text); status.setToolTipText(text); }
     void showPlaylists(List<Playlist> playlists) {
         this.playlists = List.copyOf(playlists);
-        showStatus("已读取 " + playlists.size() + " 个歌单");
-        filterPlaylists();
+        if (returnContent == null) showStatus("已读取 " + playlists.size() + " 个歌单");
+        filterPlaylists(returnContent == null);
     }
     private void filterPlaylists() {
+        filterPlaylists(true);
+    }
+    private void filterPlaylists(boolean selectPlaylist) {
         var previous = playlistList.getSelectedValue();
         var selectedCategory = (Category) category.getSelectedItem();
         changingList = true; playlistModel.clear();
@@ -412,6 +539,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
             }
         }
         changingList = false;
+        if (!selectPlaylist) return;
         if (!playlistModel.isEmpty()) playlistList.setSelectedIndex(selectedIndex);
         else if (controller.session() != null) {
             controller.clearSongs();
@@ -420,6 +548,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         }
     }
     void showContent(PlaylistContent content) {
+        returnContent = null;
         songs.setSongs(content.songs()); sorter.setSortKeys(null); filter.setText("");
         changingList = true;
         playlistList.clearSelection();
@@ -433,6 +562,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         var playlist = playlists.stream().filter(item -> item.id() == content.playlist().id())
                 .findFirst().orElse(content.playlist());
         currentContent = new PlaylistContent(playlist, content.songs(), content.expectedCount());
+        updateBatchActions();
         updateExport();
         title.setText(playlist.category() == Category.LIKED ? "喜欢的音乐" : playlist.name());
         title.setToolTipText(playlist.name());
@@ -491,6 +621,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     @Override public void close() {
         if (closed) return;
         closed = true;
+        resultTimer.stop(); batchResults.clear();
         for (var dialog : List.copyOf(dialogs)) dialog.dispose();
         controller.close(); downloads.close(); queue.close();
     }

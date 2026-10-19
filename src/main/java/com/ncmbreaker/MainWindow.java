@@ -143,6 +143,7 @@ public final class MainWindow extends JFrame {
         pages.setTabComponentAt(2, tasksLabel);
         musicPanel.setTaskCountListener(count -> tasksLabel.setText("下载任务  " + count));
         musicPanel.setShowDownloadsAction(() -> pages.setSelectedIndex(2));
+        musicPanel.setShowMusicAction(() -> pages.setSelectedIndex(1));
         root.add(pages, BorderLayout.CENTER);
         setContentPane(root);
     }
@@ -395,12 +396,12 @@ public final class MainWindow extends JFrame {
                     // Closing the window may cancel an in-progress scan.
                 } catch (InterruptedException exception) {
                     Thread.currentThread().interrupt();
-                    errorMessage = "文件扫描被中断。";
+                    errorMessage = "文件扫描被中断";
                 } catch (ExecutionException exception) {
                     var cause = exception.getCause();
                     var detail = cause == null ? exception.getMessage() : cause.getMessage();
                     errorMessage = detail == null || detail.isBlank()
-                            ? "读取文件或文件夹失败。"
+                            ? "读取文件或文件夹失败"
                             : "读取文件或文件夹失败：" + detail;
                 }
                 scanWorker = null;
@@ -441,7 +442,7 @@ public final class MainWindow extends JFrame {
         try {
             outputDirectory = Path.of(outputField.getText().trim());
         } catch (RuntimeException exception) {
-            JOptionPane.showMessageDialog(this, "输出目录无效。", "无法开始", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "输出目录无效", "无法开始", JOptionPane.ERROR_MESSAGE);
             return;
         }
 

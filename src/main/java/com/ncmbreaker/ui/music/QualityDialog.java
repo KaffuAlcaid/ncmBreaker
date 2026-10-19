@@ -155,7 +155,7 @@ final class QualityDialog extends JDialog {
                 try {
                     var result = get();
                     if (result.actual() != selected && JOptionPane.showConfirmDialog(QualityDialog.this,
-                            "所选音质为" + selected + "，服务器实际提供" + result.actual() + "。\n是否按实际音质下载？",
+                            "所选音质为" + selected + "，服务器实际提供" + result.actual() + "\n是否按实际音质下载？",
                             "音质已变化", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE) != JOptionPane.YES_OPTION) {
                         load();
                         return;

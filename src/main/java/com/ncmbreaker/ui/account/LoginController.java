@@ -223,19 +223,19 @@ final class LoginController implements AutoCloseable {
         }
         timer.stop();
         if (restoring) {
-            var message = cause instanceof HttpTimeoutException ? "连接超时，请重试。"
+            var message = cause instanceof HttpTimeoutException ? "连接超时，请重试"
                     : cause instanceof IOException && cause.getMessage() != null
                     && cause.getMessage().startsWith("保存的登录状态") ? cause.getMessage()
-                    : "暂时无法恢复登录，请检查网络后重试。";
+                    : "暂时无法恢复登录，请检查网络后重试";
             view.showRestoreError(message);
             return;
         }
-        var message = cause instanceof HttpTimeoutException ? "连接超时，请重试。"
+        var message = cause instanceof HttpTimeoutException ? "连接超时，请重试"
                 : cause instanceof IOException && cause.getMessage() != null
                 && (cause.getMessage().startsWith("服务器") || cause.getMessage().startsWith("请求失败")
                 || cause.getMessage().startsWith("二维码") || cause.getMessage().startsWith("账号")
                 || cause.getMessage().startsWith("登录") || cause.getMessage().startsWith("暂时"))
-                ? cause.getMessage() : "连接失败，请检查网络后重试。";
+                ? cause.getMessage() : "连接失败，请检查网络后重试";
         view.showError(message, authorized);
     }
 

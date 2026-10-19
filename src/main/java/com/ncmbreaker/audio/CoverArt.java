@@ -28,7 +28,7 @@ public final class CoverArt {
         catch (Exception exception) { future.cancel(true); throw exception; }
         try (var input = response.body()) {
             cancellation.bind(input);
-            if (response.statusCode() != 200) throw new MusicException("专辑封面暂时无法下载。");
+            if (response.statusCode() != 200) throw new MusicException("专辑封面暂时无法下载");
             var reader = java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
                 var thread = new Thread(task, "album-cover"); thread.setDaemon(true); return thread;
             });
@@ -38,7 +38,7 @@ public final class CoverArt {
                 try { bytes = data.get(15, TimeUnit.SECONDS); }
                 catch (Exception exception) { data.cancel(true); throw exception; }
                 cancellation.check();
-                if (bytes.length > MAX_BYTES) throw new MusicException("专辑封面文件过大。");
+                if (bytes.length > MAX_BYTES) throw new MusicException("专辑封面文件过大");
                 return bytes;
             } finally { reader.shutdownNow(); }
         }

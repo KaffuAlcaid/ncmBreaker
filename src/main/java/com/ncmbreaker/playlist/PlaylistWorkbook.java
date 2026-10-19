@@ -118,7 +118,7 @@ public final class PlaylistWorkbook {
 
     public static PlaylistContent read(Path path) throws IOException {
         requireXlsx(path);
-        if (Files.size(path) > 32L * 1024 * 1024) throw new MusicException("歌单文件超过 32 MB。");
+        if (Files.size(path) > 32L * 1024 * 1024) throw new MusicException("歌单文件超过 32 MB");
         try (var workbook = new ReadableWorkbook(path.toFile())) {
             var info = new LinkedHashMap<String, String>();
             var metadata = workbook.findSheet("歌单信息");
@@ -146,11 +146,11 @@ public final class PlaylistWorkbook {
                             var name = text(row, column).strip();
                             if (!name.isEmpty()) columns.put(name, column);
                         }
-                        if (!columns.containsKey("歌曲 ID")) throw new MusicException("请选择包含“歌曲 ID”列的 XLSX 歌单文件。");
+                        if (!columns.containsKey("歌曲 ID")) throw new MusicException("请选择包含“歌曲 ID”列的 XLSX 歌单文件");
                         continue;
                     }
                     long id = number(value(row, columns, "歌曲 ID"), 0);
-                    if (id <= 0) throw new MusicException("第 " + row.getRowNum() + " 行的歌曲 ID 无效。");
+                    if (id <= 0) throw new MusicException("第 " + row.getRowNum() + " 行的歌曲 ID 无效");
                     var title = value(row, columns, "歌曲");
                     var artists = value(row, columns, "歌手");
                     songs.add(new Song(id, title.isBlank() ? "歌曲 " + id : title,
@@ -160,7 +160,7 @@ public final class PlaylistWorkbook {
                             Math.toIntExact(number(value(row, columns, "曲目序号"), 0)),
                             !"详情暂不可用".equals(value(row, columns, "详情状态"))));
                 }
-                if (columns.isEmpty()) throw new MusicException("歌单文件中没有表头。");
+                if (columns.isEmpty()) throw new MusicException("歌单文件中没有表头");
             }
             var name = info.getOrDefault("歌单名称", path.getFileName().toString().replaceFirst("(?i)\\.xlsx$", ""));
             long id = number(info.getOrDefault("歌单 ID", ""), 0);
@@ -172,7 +172,7 @@ public final class PlaylistWorkbook {
         } catch (MusicException | CancellationException exception) {
             throw exception;
         } catch (IOException | RuntimeException exception) {
-            throw new MusicException("无法读取 XLSX 歌单，请检查文件和单元格内容。");
+            throw new MusicException("无法读取 XLSX 歌单，请检查文件和单元格内容");
         }
     }
 
@@ -184,7 +184,7 @@ public final class PlaylistWorkbook {
         var cell = column < 0 ? null : row.getOptionalCell(column).orElse(null);
         if (cell == null) return "";
         if (cell.getType() == CellType.FORMULA || cell.getType() == CellType.ERROR) {
-            throw new MusicException("第 " + row.getRowNum() + " 行包含公式或错误值，请将其转换为单元格值后导入。");
+            throw new MusicException("第 " + row.getRowNum() + " 行包含公式或错误值，请将其转换为单元格值后导入");
         }
         return cell.getText();
     }
@@ -196,7 +196,7 @@ public final class PlaylistWorkbook {
             if (result < 0) throw new ArithmeticException();
             return result;
         } catch (NumberFormatException | ArithmeticException exception) {
-            throw new MusicException("歌单中的 ID、数量或曲目序号必须是非负整数。");
+            throw new MusicException("歌单中的 ID、数量或曲目序号必须是非负整数");
         }
     }
 
@@ -217,7 +217,7 @@ public final class PlaylistWorkbook {
             if (result < 0) throw new ArithmeticException();
             return result;
         } catch (NumberFormatException | ArithmeticException exception) {
-            throw new MusicException("第 " + row.getRowNum() + " 行的时长无效。");
+            throw new MusicException("第 " + row.getRowNum() + " 行的时长无效");
         }
     }
 
@@ -232,7 +232,7 @@ public final class PlaylistWorkbook {
 
     private static void requireXlsx(Path path) throws MusicException {
         if (!path.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".xlsx")) {
-            throw new MusicException("请选择 XLSX 歌单文件。");
+            throw new MusicException("请选择 XLSX 歌单文件");
         }
     }
 

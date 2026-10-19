@@ -39,7 +39,7 @@ public final class AudioDownloader {
             cancellation.check();
             String format;
             try (var input = Files.newInputStream(temporary)) { format = format(input.readNBytes(16)); }
-            if (format == null) throw new MusicException("下载内容的音频格式暂不受支持，文件未保存。");
+            if (format == null) throw new MusicException("下载内容的音频格式暂不受支持，文件未保存");
             String warning = "";
             if (tags || cover) {
                 stage.accept("正在写入歌曲信息");
@@ -86,16 +86,16 @@ public final class AudioDownloader {
                 int status = response.statusCode();
                 if (status >= 300 && status < 400) {
                     destination = endpoint(destination.resolve(response.headers().firstValue("Location")
-                            .orElseThrow(() -> new MusicException("下载地址跳转失败，请重试。"))));
+                            .orElseThrow(() -> new MusicException("下载地址跳转失败，请重试"))));
                     continue;
                 }
                 if (status == 401 || status == 403 || status == 404) {
-                    throw new MusicException("下载地址已失效，请重试以获取新地址。");
+                    throw new MusicException("下载地址已失效，请重试以获取新地址");
                 }
-                if (status != 200) throw new MusicException("音频服务器返回错误（" + status + "），请重试。");
+                if (status != 200) throw new MusicException("音频服务器返回错误（" + status + "），请重试");
                 var declared = response.headers().firstValueAsLong("Content-Length");
                 if (declared.isPresent() && declared.getAsLong() != authorization.bytes()) {
-                    throw new MusicException("文件长度与下载信息不一致，请重试。");
+                    throw new MusicException("文件长度与下载信息不一致，请重试");
                 }
                 var lastRead = new AtomicLong(System.nanoTime());
                 var stalled = new AtomicBoolean();
@@ -120,7 +120,7 @@ public final class AudioDownloader {
                         cancellation.check();
                         lastRead.set(System.nanoTime());
                         completed += length;
-                        if (completed > authorization.bytes()) throw new MusicException("服务器返回的文件超过预期大小。");
+                        if (completed > authorization.bytes()) throw new MusicException("服务器返回的文件超过预期大小");
                         output.write(buffer, 0, length);
                         digest.update(buffer, 0, length);
                         if (System.nanoTime() - lastUpdate > TimeUnit.MILLISECONDS.toNanos(100)) {
@@ -129,16 +129,16 @@ public final class AudioDownloader {
                         }
                     }
                     cancellation.check();
-                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试。");
-                    if (completed != authorization.bytes()) throw new MusicException("音频下载不完整，请重试。");
+                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试");
+                    if (completed != authorization.bytes()) throw new MusicException("音频下载不完整，请重试");
                     if (!authorization.md5().isBlank()
                             && !HexFormat.of().formatHex(digest.digest()).equalsIgnoreCase(authorization.md5())) {
-                        throw new MusicException("文件校验未通过，请重试。");
+                        throw new MusicException("文件校验未通过，请重试");
                     }
                     progress.update(completed, authorization.bytes());
                 } catch (IOException exception) {
                     cancellation.check();
-                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试。");
+                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试");
                     throw exception;
                 } finally {
                     timeout.shutdownNow();
@@ -146,17 +146,17 @@ public final class AudioDownloader {
                 return;
             }
         }
-        throw new MusicException("下载地址跳转次数过多，请重试。");
+        throw new MusicException("下载地址跳转次数过多，请重试");
     }
 
     public static URI endpoint(URI uri) throws MusicException {
         var host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.ROOT);
         if (!(host.endsWith(".music.126.net") || host.endsWith(".music.163.com") || host.endsWith(".nosdn.127.net"))
                 || uri.getUserInfo() != null || (uri.getPort() != -1 && uri.getPort() != 80 && uri.getPort() != 443)) {
-            throw new MusicException("服务器返回了无法识别的音频地址。");
+            throw new MusicException("服务器返回了无法识别的音频地址");
         }
         if ("http".equalsIgnoreCase(uri.getScheme())) return URI.create("https:" + uri.toString().substring(5));
-        if (!"https".equalsIgnoreCase(uri.getScheme())) throw new MusicException("下载地址协议不受支持。");
+        if (!"https".equalsIgnoreCase(uri.getScheme())) throw new MusicException("下载地址协议不受支持");
         return uri;
     }
 

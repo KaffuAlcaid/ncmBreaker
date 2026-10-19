@@ -7,6 +7,7 @@ import javax.swing.event.TableModelEvent;
 import java.awt.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -14,6 +15,7 @@ final class DownloadPanel extends JPanel {
     private final DownloadQueue queue;
     private final JTable table;
     private final JButton cancel = UiStyle.button("取消所选");
+    private final JButton cancelBatch = UiStyle.button("取消整批");
     private final JButton retry = UiStyle.button("重新选择音质");
     private final JButton clear = UiStyle.button("清除已结束");
     private final JLabel summary = new JLabel("暂无下载任务");
@@ -21,6 +23,8 @@ final class DownloadPanel extends JPanel {
     private final Supplier<Path> defaultDirectory;
     private boolean signedIn;
     private boolean closed;
+    private boolean refreshScheduled;
+    private int insertedRow = -1;
 
     DownloadPanel(DownloadQueue queue, Consumer<Song> retryDownload, Supplier<Path> defaultDirectory) {
         super(new BorderLayout(0, 18));
@@ -36,6 +40,7 @@ final class DownloadPanel extends JPanel {
         heading.add(summary, BorderLayout.SOUTH);
         add(heading, BorderLayout.NORTH);
         UiStyle.table(table, 54);
+        table.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         table.setName("downloads.table");
         table.getColumnModel().getColumn(0).setPreferredWidth(250);
         table.getColumnModel().getColumn(1).setPreferredWidth(100);
@@ -50,8 +55,13 @@ final class DownloadPanel extends JPanel {
         var folder = UiStyle.button("打开目录");
         folder.setIcon(UIManager.getIcon("FileView.directoryIcon"));
         cancel.addActionListener(event -> {
-            int row = table.getSelectedRow();
-            if (row >= 0) queue.cancel(row);
+            for (int row : table.getSelectedRows()) queue.cancel(row);
+        });
+        cancelBatch.addActionListener(event -> {
+            var batches = Arrays.stream(table.getSelectedRows()).filter(row -> row < queue.getRowCount())
+                    .mapToObj(row -> queue.task(row).batch)
+                    .filter(java.util.Objects::nonNull).distinct().toList();
+            for (var batch : batches) queue.cancelBatch(batch);
         });
         retry.addActionListener(event -> {
             int row = table.getSelectedRow();
@@ -59,28 +69,36 @@ final class DownloadPanel extends JPanel {
         });
         folder.addActionListener(event -> openDirectory(folder));
         clear.addActionListener(event -> queue.clearFinished());
-        actions.add(cancel); actions.add(retry); actions.add(folder); actions.add(clear);
+        actions.add(cancel); actions.add(cancelBatch); actions.add(retry); actions.add(folder); actions.add(clear);
         footer.add(actions, BorderLayout.NORTH);
         status.setForeground(UiStyle.muted());
         status.putClientProperty("html.disable", Boolean.TRUE);
         status.setPreferredSize(new Dimension(0, 24));
         footer.add(status, BorderLayout.SOUTH);
         add(footer, BorderLayout.SOUTH);
-        queue.addTableModelListener(event -> SwingUtilities.invokeLater(() -> {
-            if (closed) return;
-            int count = queue.getRowCount();
-            if (count > 0) {
-                int selected = table.getSelectedRow();
-                if (event.getType() == TableModelEvent.INSERT) {
-                    int row = Math.min(event.getLastRow(), count - 1);
-                    table.setRowSelectionInterval(row, row);
-                    table.scrollRectToVisible(table.getCellRect(row, 0, true));
-                } else if (selected < 0 || selected >= count) {
-                    table.setRowSelectionInterval(0, 0);
+        queue.addTableModelListener(event -> {
+            if (event.getType() == TableModelEvent.INSERT) insertedRow = event.getLastRow();
+            if (refreshScheduled) return;
+            refreshScheduled = true;
+            SwingUtilities.invokeLater(() -> {
+                refreshScheduled = false;
+                int inserted = insertedRow;
+                insertedRow = -1;
+                if (closed) return;
+                int count = queue.getRowCount();
+                if (count > 0) {
+                    int selected = table.getSelectedRow();
+                    if (inserted >= 0) {
+                        int row = Math.min(inserted, count - 1);
+                        table.setRowSelectionInterval(row, row);
+                        table.scrollRectToVisible(table.getCellRect(row, 0, true));
+                    } else if (selected < 0 || selected >= count) {
+                        table.setRowSelectionInterval(0, 0);
+                    }
                 }
-            }
-            updateActions();
-        }));
+                updateActions();
+            });
+        });
         updateActions();
     }
 
@@ -90,20 +108,31 @@ final class DownloadPanel extends JPanel {
     private void updateActions() {
         int row = table.getSelectedRow();
         var task = row >= 0 && row < queue.getRowCount() ? queue.task(row) : null;
-        cancel.setEnabled(task != null && !task.finished);
-        retry.setEnabled(task != null && task.finished && signedIn);
+        cancel.setEnabled(Arrays.stream(table.getSelectedRows()).filter(index -> index < queue.getRowCount())
+                .anyMatch(index -> !queue.task(index).finished()));
+        cancelBatch.setEnabled(Arrays.stream(table.getSelectedRows()).filter(index -> index < queue.getRowCount()).anyMatch(index -> {
+            var batch = queue.task(index).batch;
+            return batch != null && batch.remaining > 0;
+        }));
+        retry.setEnabled(table.getSelectedRowCount() == 1 && task != null && task.finished() && signedIn);
         int finished = 0;
         int active = 0;
+        int succeeded = 0;
+        int failed = 0;
+        int cancelled = 0;
         for (int index = 0; index < queue.getRowCount(); index++) {
             var item = queue.task(index);
-            if (item.finished) finished++;
+            if (item.finished()) finished++;
             else if (item.started) active++;
+            if (item.state == DownloadQueue.State.SUCCEEDED) succeeded++;
+            if (item.state == DownloadQueue.State.FAILED) failed++;
+            if (item.state == DownloadQueue.State.CANCELLED) cancelled++;
         }
         clear.setEnabled(finished > 0);
         int total = queue.getRowCount();
         summary.setText(total == 0 ? "暂无下载任务"
                 : total + " 个任务 · " + active + " 个进行中 · " + (total - finished - active)
-                + " 个等待中 · " + finished + " 个已结束");
+                + " 个等待中 · " + succeeded + " 个完成 · " + failed + " 个失败 · " + cancelled + " 个取消");
         showStatus(task == null ? " " : task.output == null ? task.directory.toString() : task.output.toString());
     }
 

@@ -36,18 +36,18 @@ final class SavedLoginStore {
 
     private SessionState read(Path source) throws IOException {
         if (!Files.isRegularFile(source, LinkOption.NOFOLLOW_LINKS) || Files.size(source) > 256 * 1024) {
-            throw new IOException("保存的登录状态无法读取，请重新扫码。");
+            throw new IOException("保存的登录状态无法读取，请重新扫码");
         }
         secure(source, false);
         try (var reader = Files.newBufferedReader(source, StandardCharsets.UTF_8)) {
             var state = JSON.fromJson(reader, SessionState.class);
             if (state == null || state.version() != 1 || state.deviceId() == null
                     || !state.deviceId().matches("[a-fA-F0-9]{32}")) {
-                throw new IOException("保存的登录状态无法读取，请重新扫码。");
+                throw new IOException("保存的登录状态无法读取，请重新扫码");
             }
             return state;
         } catch (JsonParseException | IllegalArgumentException exception) {
-            throw new IOException("保存的登录状态无法读取，请重新扫码。");
+            throw new IOException("保存的登录状态无法读取，请重新扫码");
         }
     }
 
@@ -78,7 +78,7 @@ final class SavedLoginStore {
             Files.createDirectory(directory, permissions(true));
         } catch (FileAlreadyExistsException ignored) {
             if (!Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) {
-                throw new IOException("登录状态保存目录不可用。");
+                throw new IOException("登录状态保存目录不可用");
             }
         }
         secure(directory, true);
@@ -101,7 +101,7 @@ final class SavedLoginStore {
                 @Override public List<AclEntry> value() { return acl; }
             };
         }
-        throw new IOException("当前文件系统无法保护登录凭据。");
+        throw new IOException("当前文件系统无法保护登录凭据");
     }
 
     private void secure(Path path, boolean folder) throws IOException {

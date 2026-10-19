@@ -20,7 +20,7 @@ public final class MusicService {
 
     public List<Playlist> userPlaylists() throws IOException, InterruptedException {
         var account = session.account();
-        if (account == null) throw new MusicException("请先登录网易云账号。");
+        if (account == null) throw new MusicException("请先登录网易云账号");
         var playlists = new LinkedHashMap<Long, Playlist>();
         for (int offset = 0; ; ) {
             var data = new JsonObject();
@@ -42,7 +42,7 @@ public final class MusicService {
             }
             if (!bool(response, "more")) break;
             if (page.isEmpty() || playlists.size() == before) {
-                throw new MusicException("歌单分页返回不完整，请刷新重试。");
+                throw new MusicException("歌单分页返回不完整，请刷新重试");
             }
             offset += page.size();
         }
@@ -56,14 +56,14 @@ public final class MusicService {
         request.addProperty("s", 0);
         var response = post("/api/v6/playlist/detail", request, NeteaseClient.Protocol.EAPI);
         var item = object(response, "playlist");
-        if (number(item, "id") != id) throw new MusicException("未找到该歌单，或当前账号无法访问。");
+        if (number(item, "id") != id) throw new MusicException("未找到该歌单，或当前账号无法访问");
         var ids = new ArrayList<Long>();
         for (var track : array(item, "trackIds")) {
             long songId = track.isJsonObject() ? number(track.getAsJsonObject(), "id") : track.getAsLong();
             if (songId > 0) ids.add(songId);
         }
         int count = (int) number(item, "trackCount");
-        if (ids.isEmpty() && count > 0) throw new MusicException("服务器没有返回歌单中的歌曲，请刷新重试。");
+        if (ids.isEmpty() && count > 0) throw new MusicException("服务器没有返回歌单中的歌曲，请刷新重试");
         var songs = songs(ids, progress);
         return new PlaylistContent(new Playlist(id, text(item, "name"), count,
                 text(item, "coverImgUrl"), Category.CREATED), songs, count);
@@ -113,12 +113,12 @@ public final class MusicService {
                         (int) number(resource, "sr"), (int) number(resource, "br")));
             }
         }
-        if (options.isEmpty()) throw new MusicException("这首歌暂时没有可用的音质信息。");
+        if (options.isEmpty()) throw new MusicException("这首歌暂时没有可用的音质信息");
         return List.copyOf(options);
     }
 
     public AuthorizedDownload authorize(long id, AudioQuality quality) throws IOException, InterruptedException {
-        if (session.account() == null) throw new MusicException("请先登录网易云账号。");
+        if (session.account() == null) throw new MusicException("请先登录网易云账号");
         var request = new JsonObject();
         request.addProperty("id", id);
         request.addProperty("level", quality.level());
@@ -130,25 +130,25 @@ public final class MusicService {
         success(response);
         var data = object(response, "data");
         if (number(data, "id") != id || number(data, "code") != 200 || text(data, "url").isBlank()) {
-            throw new MusicException("当前账号无法下载这首歌的所选音质。");
+            throw new MusicException("当前账号无法下载这首歌的所选音质");
         }
         for (var key : List.of("freeTrialInfo", "trialInfo")) {
             if (data.has(key) && !data.get(key).isJsonNull()) {
-                throw new MusicException("服务器只提供试听内容，请选择其他音质或检查账号权限。");
+                throw new MusicException("服务器只提供试听内容，请选择其他音质或检查账号权限");
             }
         }
         var actual = AudioQuality.fromLevel(text(data, "level"));
-        if (actual == null || number(data, "size") <= 0) throw new MusicException("服务器返回的下载信息不完整。");
+        if (actual == null || number(data, "size") <= 0) throw new MusicException("服务器返回的下载信息不完整");
         try {
             return new AuthorizedDownload(id, quality, actual, URI.create(text(data, "url")),
                     number(data, "size"), text(data, "md5"), text(data, "type"));
         } catch (IllegalArgumentException exception) {
-            throw new MusicException("服务器返回的下载地址无效。");
+            throw new MusicException("服务器返回的下载地址无效");
         }
     }
 
     private JsonObject post(String path, JsonObject data, NeteaseClient.Protocol protocol) throws IOException, InterruptedException {
-        if (session.account() == null) throw new MusicException("请先登录网易云账号。");
+        if (session.account() == null) throw new MusicException("请先登录网易云账号");
         var response = session.client().post(path, data, protocol);
         success(response);
         return response;

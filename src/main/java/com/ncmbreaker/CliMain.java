@@ -29,7 +29,7 @@ public final class CliMain {
                 switch (args[index]) {
                     case "-o", "--output" -> {
                         if (++index >= args.length) {
-                            System.err.println("缺少输出目录。");
+                            System.err.println("缺少输出目录");
                             return 1;
                         }
                         outputDirectory = Path.of(args[index]);
@@ -59,7 +59,7 @@ public final class CliMain {
         }
 
         if (inputs.isEmpty()) {
-            System.err.println("没有输入文件或目录。");
+            System.err.println("没有输入文件或目录");
             return 1;
         }
 
@@ -73,7 +73,7 @@ public final class CliMain {
         }
 
         if (files.isEmpty()) {
-            System.err.println("没有找到 .ncm 文件。");
+            System.err.println("没有找到 .ncm 文件");
             return 1;
         }
 
@@ -103,7 +103,7 @@ public final class CliMain {
         }
 
         if (!inspectOnly) {
-            System.out.printf("完成 %d 个，失败 %d 个。%n", completed, failed);
+            System.out.printf("完成 %d 个，失败 %d 个%n", completed, failed);
         }
         return failed == 0 ? 0 : 2;
     }

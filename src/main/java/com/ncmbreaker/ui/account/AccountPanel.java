@@ -128,14 +128,14 @@ public final class AccountPanel extends JPanel implements AutoCloseable {
         placeholder("尚未登录");
         accountName.setText(" ");
         accountId.setText(" ");
-        status.setText("无法清除已保存的登录状态，请重试。");
+        status.setText("无法清除已保存的登录状态，请重试");
         actions("重试", true, false, "取消");
     }
 
     void showSaveWarning() {
         saveWarning = true;
-        status.setText("已登录，但登录状态未能保存。");
-        status.setToolTipText("请检查程序所在目录的写入权限；下次启动需要重新扫码。");
+        status.setText("已登录，但登录状态未能保存");
+        status.setToolTipText("请检查程序所在目录的写入权限；下次启动需要重新扫码");
     }
 
     boolean hasSaveWarning() { return saveWarning; }

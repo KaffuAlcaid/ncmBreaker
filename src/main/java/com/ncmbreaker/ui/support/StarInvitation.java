@@ -58,7 +58,7 @@ public final class StarInvitation implements AutoCloseable {
 
         var options = new String[]{"去 GitHub Star", "不了，谢谢"};
         int choice = JOptionPane.showOptionDialog(owner,
-                "如果 NCM Breaker 对你有帮助，\n欢迎在 GitHub 给项目一个 Star，帮助更多人发现它。",
+                "如果 NCM Breaker 对你有帮助，\n欢迎在 GitHub 给项目一个 Star，帮助更多人发现它",
                 "支持 NCM Breaker", JOptionPane.YES_NO_OPTION, JOptionPane.INFORMATION_MESSAGE,
                 null, options, options[1]);
         if (choice == 0) openProject();

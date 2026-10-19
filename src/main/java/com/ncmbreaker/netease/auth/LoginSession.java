@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets;
 
 public final class LoginSession implements AutoCloseable {
     public static final class ExpiredException extends IOException {
-        ExpiredException() { super("登录状态已失效，请重新扫码。"); }
+        ExpiredException() { super("登录状态已失效，请重新扫码"); }
     }
     public enum QrStatus { EXPIRED, WAITING, SCANNED, AUTHORIZED }
 
@@ -49,7 +49,7 @@ public final class LoginSession implements AutoCloseable {
         var data = object(response, "data");
         var key = string(response.has("unikey") ? response : data, "unikey", "");
         if (key.isBlank()) {
-            throw new IOException("服务器未返回二维码，请重试。");
+            throw new IOException("服务器未返回二维码，请重试");
         }
         return new Challenge(key, "https://music.163.com/login?codekey="
                 + URLEncoder.encode(key, StandardCharsets.UTF_8));
@@ -66,7 +66,7 @@ public final class LoginSession implements AutoCloseable {
             case 801 -> QrStatus.WAITING;
             case 802 -> QrStatus.SCANNED;
             case 803 -> QrStatus.AUTHORIZED;
-            default -> throw new IOException("暂时无法读取登录状态（" + code + "），请刷新二维码。");
+            default -> throw new IOException("暂时无法读取登录状态（" + code + "），请刷新二维码");
         };
     }
 
@@ -97,7 +97,7 @@ public final class LoginSession implements AutoCloseable {
     private static void requireSuccess(JsonObject response, String message) throws IOException {
         var code = integer(response, "code", -1);
         if (code != 200) {
-            throw new IOException(message + "（" + code + "），请稍后重试。");
+            throw new IOException(message + "（" + code + "），请稍后重试");
         }
     }
 

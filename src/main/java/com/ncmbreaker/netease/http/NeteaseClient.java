@@ -93,7 +93,7 @@ public final class NeteaseClient implements AutoCloseable {
                 form = NeteaseCrypto.weapi(JSON.toJson(payload));
             }
         } catch (GeneralSecurityException exception) {
-            throw new IOException("无法创建登录请求。", exception);
+            throw new IOException("无法创建登录请求", exception);
         }
         var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(form)).build();
         var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -105,7 +105,7 @@ public final class NeteaseClient implements AutoCloseable {
             try {
                 responseBody = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
             } catch (RuntimeException exception) {
-                throw new IOException("服务器未返回有效数据（HTTP " + status + "）。", exception);
+                throw new IOException("服务器未返回有效数据（HTTP " + status + "）", exception);
             }
         }
         synchronized (this) {
@@ -116,10 +116,10 @@ public final class NeteaseClient implements AutoCloseable {
             }
         }
         if (status < 200 || status >= 300) {
-            throw new IOException("请求失败（HTTP " + status + "），请稍后重试。");
+            throw new IOException("请求失败（HTTP " + status + "），请稍后重试");
         }
         if (!responseBody.isJsonObject()) {
-            throw new IOException("服务器返回的数据格式无法识别。");
+            throw new IOException("服务器返回的数据格式无法识别");
         }
         return responseBody.getAsJsonObject();
     }
@@ -128,17 +128,17 @@ public final class NeteaseClient implements AutoCloseable {
         var future = RESPONSE_READERS.submit(() -> {
             try (var input = encoding.equalsIgnoreCase("gzip") ? new GZIPInputStream(raw) : raw) {
                 var bytes = input.readNBytes(MAX_RESPONSE_BYTES + 1);
-                if (bytes.length > MAX_RESPONSE_BYTES) throw new IOException("服务器响应过大，请稍后重试。");
+                if (bytes.length > MAX_RESPONSE_BYTES) throw new IOException("服务器响应过大，请稍后重试");
                 return bytes;
             }
         });
         try {
             return future.get(20, TimeUnit.SECONDS);
         } catch (TimeoutException exception) {
-            throw new HttpTimeoutException("读取服务器响应超时。");
+            throw new HttpTimeoutException("读取服务器响应超时");
         } catch (ExecutionException exception) {
             if (exception.getCause() instanceof IOException failure) throw failure;
-            throw new IOException("服务器返回的数据无法读取。", exception.getCause());
+            throw new IOException("服务器返回的数据无法读取", exception.getCause());
         } finally {
             future.cancel(true);
         }
@@ -158,7 +158,7 @@ public final class NeteaseClient implements AutoCloseable {
             deviceId = state.deviceId();
         } catch (RuntimeException exception) {
             cookieStore.removeAll();
-            throw new IOException("保存的登录状态无法读取，请重新扫码。");
+            throw new IOException("保存的登录状态无法读取，请重新扫码");
         }
     }
 
@@ -196,7 +196,7 @@ public final class NeteaseClient implements AutoCloseable {
 
     private void ensureOpen() throws IOException {
         if (closed) {
-            throw new IOException("登录会话已结束。");
+            throw new IOException("登录会话已结束");
         }
     }
 

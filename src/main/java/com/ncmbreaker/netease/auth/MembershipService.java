@@ -37,7 +37,7 @@ public final class MembershipService {
         var response = client.post("/api/music-vip-membership/client/vip/info", parameters, NeteaseClient.Protocol.WEAPI);
         var data = object(response, "data");
         if (number(response, "code", -1) != 200 || data == null || number(data, "userId", -1) != userId) {
-            throw new IOException("会员详情暂不可用。");
+            throw new IOException("会员详情暂不可用");
         }
         long now = number(data, "now", System.currentTimeMillis());
         if (now <= 0) now = System.currentTimeMillis();

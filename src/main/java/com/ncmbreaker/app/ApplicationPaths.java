@@ -17,7 +17,7 @@ public final class ApplicationPaths {
                     .getLocation().toURI()).toAbsolutePath().normalize();
             return Files.isDirectory(location) ? location : location.getParent();
         } catch (URISyntaxException exception) {
-            throw new IllegalStateException("无法确定程序所在目录。", exception);
+            throw new IllegalStateException("无法确定程序所在目录", exception);
         }
     }
 }

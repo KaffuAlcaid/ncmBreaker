@@ -35,6 +35,6 @@ public record MusicLink(long id, boolean song) {
         } catch (IllegalArgumentException ignored) {
             // Present one actionable message for malformed or unrelated links.
         }
-        throw new MusicException(songId ? "请输入网易云歌曲链接或歌曲 ID。" : "请输入网易云歌单链接或歌单 ID。");
+        throw new MusicException(songId ? "请输入网易云歌曲链接或歌曲 ID" : "请输入网易云歌单链接或歌单 ID");
     }
 }
