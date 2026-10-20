@@ -32,12 +32,17 @@ public final class PlaylistWorkbook {
     private PlaylistWorkbook() { }
 
     public static String fileName(PlaylistContent content) {
+        return baseName(content) + ".xlsx";
+    }
+
+    public static String baseName(PlaylistContent content) {
         var name = content.playlist().name().replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_")
                 .strip().replaceAll("[. ]+$", "");
         if (name.isBlank()) name = "歌单";
-        if (name.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])")) name = "_" + name;
+        if (name.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\\..*)?")) name = "_" + name;
         name = name.substring(0, name.offsetByCodePoints(0, Math.min(name.codePointCount(0, name.length()), 80)));
-        return name + (content.playlist().id() > 0 ? "_" + content.playlist().id() : "") + ".xlsx";
+        name = name.replaceAll("[. ]+$", "");
+        return name + (content.playlist().id() > 0 ? "_" + content.playlist().id() : "");
     }
 
     public static void write(Path target, PlaylistContent content, boolean overwrite) throws IOException {

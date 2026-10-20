@@ -4,6 +4,9 @@ import com.ncmbreaker.ui.WorkspaceTabs;
 import com.ncmbreaker.ui.account.AccountMenu;
 import com.ncmbreaker.ui.music.MusicPanel;
 import com.ncmbreaker.ui.support.StarInvitation;
+import com.ncmbreaker.app.AppSettingsStore;
+import com.ncmbreaker.app.AppSettingsStore.Directory;
+import com.ncmbreaker.app.AppSettingsStore.Option;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractButton;
 import javax.swing.ImageIcon;
@@ -23,6 +26,7 @@ import javax.swing.JTextField;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.TransferHandler;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -44,6 +48,9 @@ import java.awt.Insets;
 import java.awt.RenderingHints;
 import java.awt.Rectangle;
 import java.awt.event.MouseEvent;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
+import java.awt.datatransfer.DataFlavor;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.image.BufferedImage;
@@ -56,6 +63,7 @@ import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 
 public final class MainWindow extends JFrame {
+    private final AppSettingsStore settings = new AppSettingsStore();
     private final NcmFileIO fileIO = new NcmFileIO();
     private final FileTableModel tableModel = new FileTableModel();
     private final Set<Path> knownPaths = new HashSet<>();
@@ -67,16 +75,16 @@ public final class MainWindow extends JFrame {
     private final JButton browseOutputButton = button("选择");
     private final JButton cancelButton = button("取消");
     private final JButton startButton = primaryButton("开始转换");
-    private final JTextField outputField = new JTextField(defaultOutputPath());
-    private final JCheckBox tagsCheckBox = new JCheckBox("写入基础标签", true);
-    private final JCheckBox coverCheckBox = new JCheckBox("嵌入专辑封面", true);
+    private final JTextField outputField = new JTextField(settings.directory(Directory.CONVERSION_OUTPUT, Path.of(defaultOutputPath())).toString());
+    private final JCheckBox tagsCheckBox = new JCheckBox("写入基础标签", settings.option(Option.CONVERSION_TAGS));
+    private final JCheckBox coverCheckBox = new JCheckBox("嵌入专辑封面", settings.option(Option.CONVERSION_COVER));
     private final JComboBox<ConflictChoice> conflictBox = new JComboBox<>(ConflictChoice.values());
     private final JLabel summaryLabel = mutedLabel("0 个文件");
     private final JProgressBar overallProgress = new JProgressBar(0, 100);
     private final JTable table;
     private final JTabbedPane pages = new WorkspaceTabs();
     private final AccountMenu accountMenu = new AccountMenu();
-    private final MusicPanel musicPanel = new MusicPanel();
+    private final MusicPanel musicPanel = new MusicPanel(settings);
     private final StarInvitation starInvitation;
 
     private SwingWorker<?, ?> scanWorker;
@@ -87,6 +95,9 @@ public final class MainWindow extends JFrame {
         super("NCM Breaker");
         starInvitation = new StarInvitation(this, () -> closing || busy() || musicPanel.isBusy());
         table = createTable();
+        for (var choice : ConflictChoice.values()) {
+            if (choice.policy == settings.conflictPolicy()) conflictBox.setSelectedItem(choice);
+        }
         musicPanel.setLoginAction(this::showAccountPage);
         musicPanel.setTaskSuccessListener(starInvitation::taskSucceeded);
         accountMenu.setSessionListener(musicPanel::setSession);
@@ -94,6 +105,9 @@ public final class MainWindow extends JFrame {
         buildLayout();
         bindActions();
         updateControls();
+        settings.setErrorHandler(message -> SwingUtilities.invokeLater(() -> {
+            if (!closing && isDisplayable()) JOptionPane.showMessageDialog(this, message, "设置", JOptionPane.WARNING_MESSAGE);
+        }));
         accountMenu.restoreLogin();
     }
 
@@ -107,6 +121,8 @@ public final class MainWindow extends JFrame {
 
             @Override
             public void windowClosed(WindowEvent event) {
+                rememberOutputDirectory();
+                settings.close();
                 starInvitation.close();
                 musicPanel.close();
                 accountMenu.close();
@@ -132,7 +148,13 @@ public final class MainWindow extends JFrame {
         var content = new JPanel(new BorderLayout());
         content.setBackground(DarkTheme.WINDOW);
         content.add(createControls(), BorderLayout.NORTH);
-        content.add(new JScrollPane(table), BorderLayout.CENTER);
+        var scroll = new JScrollPane(table);
+        var importer = new NcmTransferHandler();
+        content.setTransferHandler(importer);
+        table.setTransferHandler(importer);
+        scroll.setTransferHandler(importer);
+        scroll.getViewport().setTransferHandler(importer);
+        content.add(scroll, BorderLayout.CENTER);
         content.add(createFooter(), BorderLayout.SOUTH);
         pages.addTab("本地转换", content);
         pages.addTab("音乐下载", musicPanel);
@@ -324,6 +346,16 @@ public final class MainWindow extends JFrame {
         startButton.addActionListener(event -> startConversion());
         cancelButton.addActionListener(event -> cancelConversion());
         outputField.getDocument().addDocumentListener((SimpleDocumentListener) this::updateControls);
+        outputField.addActionListener(event -> rememberOutputDirectory());
+        outputField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent event) { rememberOutputDirectory(); }
+        });
+        tagsCheckBox.addActionListener(event -> settings.setOption(Option.CONVERSION_TAGS, tagsCheckBox.isSelected()));
+        coverCheckBox.addActionListener(event -> settings.setOption(Option.CONVERSION_COVER, coverCheckBox.isSelected()));
+        conflictBox.addActionListener(event -> {
+            var choice = (ConflictChoice) conflictBox.getSelectedItem();
+            if (choice != null) settings.setConflictPolicy(choice.policy);
+        });
     }
 
     private void chooseFiles() {
@@ -331,6 +363,7 @@ public final class MainWindow extends JFrame {
         chooser.setMultiSelectionEnabled(true);
         chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            settings.setDirectory(Directory.NCM_INPUT, chooser.getCurrentDirectory().toPath());
             var roots = java.util.Arrays.stream(chooser.getSelectedFiles()).map(file -> file.toPath()).toList();
             scan(roots);
         }
@@ -340,34 +373,42 @@ public final class MainWindow extends JFrame {
         var chooser = ncmChooser();
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            settings.setDirectory(Directory.NCM_INPUT, chooser.getSelectedFile().toPath());
             scan(List.of(chooser.getSelectedFile().toPath()));
         }
     }
 
     private void chooseOutputDirectory() {
-        var chooser = new JFileChooser();
+        Path preferred;
+        try { preferred = Path.of(outputField.getText().strip()).toAbsolutePath().normalize(); }
+        catch (RuntimeException exception) { preferred = settings.directory(Directory.CONVERSION_OUTPUT, Path.of(defaultOutputPath())); }
+        var chooser = new JFileChooser(AppSettingsStore.existingDirectory(preferred));
         chooser.setDialogTitle("选择输出目录");
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
             outputField.setText(chooser.getSelectedFile().getAbsolutePath());
+            rememberOutputDirectory();
         }
     }
 
     private JFileChooser ncmChooser() {
-        var chooser = new JFileChooser();
+        var chooser = new JFileChooser(settings.chooserDirectory(Directory.NCM_INPUT, null));
         chooser.setDialogTitle("选择 NCM 文件");
         chooser.setFileFilter(new FileNameExtensionFilter("网易云 NCM 文件", "ncm"));
         return chooser;
     }
 
     private void scan(List<Path> roots) {
-        if (scanWorker != null || roots.isEmpty()) {
+        if (closing || busy() || roots.isEmpty()) {
             return;
         }
         scanWorker = new SwingWorker<Void, FileEntry>() {
+            private int found;
             @Override
             protected Void doInBackground() throws Exception {
-                for (var path : fileIO.collectNcmFiles(roots)) {
+                var files = fileIO.collectNcmFiles(roots);
+                found = files.size();
+                for (var path : files) {
                     if (isCancelled()) {
                         break;
                     }
@@ -413,11 +454,46 @@ public final class MainWindow extends JFrame {
                             "扫描失败",
                             JOptionPane.ERROR_MESSAGE
                     );
+                } else if (!closing && !isCancelled() && found == 0) {
+                    JOptionPane.showMessageDialog(MainWindow.this, "没有找到 NCM 文件", "添加文件", JOptionPane.INFORMATION_MESSAGE);
                 }
             }
         };
         scanWorker.execute();
         updateControls();
+    }
+
+    private void rememberOutputDirectory() {
+        if (outputField.getText().isBlank()) return;
+        try { settings.setDirectory(Directory.CONVERSION_OUTPUT, Path.of(outputField.getText().strip())); }
+        catch (java.nio.file.InvalidPathException ignored) { }
+    }
+
+    private final class NcmTransferHandler extends TransferHandler {
+        @Override public boolean canImport(TransferSupport support) {
+            if (closing || busy() || !support.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) return false;
+            if (support.isDrop()) {
+                if ((support.getSourceDropActions() & COPY) == 0) return false;
+                support.setDropAction(COPY);
+            }
+            return true;
+        }
+
+        @Override public boolean importData(TransferSupport support) {
+            if (!canImport(support)) return false;
+            try {
+                var value = support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
+                if (!(value instanceof List<?> files)) return false;
+                var roots = files.stream().filter(java.io.File.class::isInstance)
+                        .map(java.io.File.class::cast).map(java.io.File::toPath).toList();
+                if (roots.isEmpty()) return false;
+                scan(roots);
+                return true;
+            } catch (Exception exception) {
+                JOptionPane.showMessageDialog(MainWindow.this, "无法读取拖入的文件，请重新拖入或使用添加文件", "添加文件", JOptionPane.ERROR_MESSAGE);
+                return false;
+            }
+        }
     }
 
     private void removeSelected() {
@@ -441,6 +517,7 @@ public final class MainWindow extends JFrame {
         final Path outputDirectory;
         try {
             outputDirectory = Path.of(outputField.getText().trim());
+            settings.setDirectory(Directory.CONVERSION_OUTPUT, outputDirectory);
         } catch (RuntimeException exception) {
             JOptionPane.showMessageDialog(this, "输出目录无效", "无法开始", JOptionPane.ERROR_MESSAGE);
             return;

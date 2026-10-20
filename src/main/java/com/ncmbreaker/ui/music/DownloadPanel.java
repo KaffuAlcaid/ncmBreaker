@@ -1,6 +1,5 @@
 package com.ncmbreaker.ui.music;
 
-import com.ncmbreaker.netease.music.MusicModels.Song;
 import com.ncmbreaker.ui.UiStyle;
 import javax.swing.*;
 import javax.swing.event.TableModelEvent;
@@ -26,7 +25,7 @@ final class DownloadPanel extends JPanel {
     private boolean refreshScheduled;
     private int insertedRow = -1;
 
-    DownloadPanel(DownloadQueue queue, Consumer<Song> retryDownload, Supplier<Path> defaultDirectory) {
+    DownloadPanel(DownloadQueue queue, Consumer<DownloadQueue.Task> retryDownload, Supplier<Path> defaultDirectory) {
         super(new BorderLayout(0, 18));
         this.queue = queue;
         this.defaultDirectory = defaultDirectory;
@@ -65,7 +64,7 @@ final class DownloadPanel extends JPanel {
         });
         retry.addActionListener(event -> {
             int row = table.getSelectedRow();
-            if (row >= 0) retryDownload.accept(queue.task(row).song);
+            if (row >= 0) retryDownload.accept(queue.task(row));
         });
         folder.addActionListener(event -> openDirectory(folder));
         clear.addActionListener(event -> queue.clearFinished());

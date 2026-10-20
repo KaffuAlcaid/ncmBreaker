@@ -10,6 +10,8 @@
 **/session/session.json
 **/session/session-*.tmp
 **/config/star-invitation.json
+**/config/settings.json
+**/config/settings-*.tmp
 .ncm-breaker-playlist-*.tmp
 
 /Java/

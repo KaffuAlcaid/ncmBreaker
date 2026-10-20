@@ -8,6 +8,7 @@ import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.netease.music.MusicModels.Song;
 import com.ncmbreaker.netease.music.MusicModels.PlaylistContent;
 import com.ncmbreaker.netease.music.MusicService;
+import com.ncmbreaker.playlist.PlaylistWorkbook;
 import javax.swing.SwingUtilities;
 import javax.swing.table.AbstractTableModel;
 import java.nio.file.Path;
@@ -42,21 +43,30 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
 
     private record TaskKey(LoginSession session, long songId, AudioQuality quality, Path directory) { }
 
+    record Destination(Path baseDirectory, boolean byPlaylist, Path directory) {
+        static Destination forPlaylist(Path baseDirectory, boolean byPlaylist, PlaylistContent playlist) {
+            var base = baseDirectory.toAbsolutePath().normalize();
+            return new Destination(base, byPlaylist, byPlaylist ? base.resolve(PlaylistWorkbook.baseName(playlist)) : base);
+        }
+    }
+
     static final class Batch {
         final LoginSession session;
         final PlaylistContent source;
         final PlaylistContent original;
+        final Destination destination;
         final List<Task> tasks = new ArrayList<>();
         int remaining;
         int skipped;
-        Batch(LoginSession session, PlaylistContent source, PlaylistContent original) {
+        Batch(LoginSession session, PlaylistContent source, PlaylistContent original, Destination destination) {
             this.session = session; this.source = source; this.original = original;
+            this.destination = destination;
         }
     }
 
     record TaskResult(Song song, State state, String message) { }
     record BatchResult(LoginSession session, PlaylistContent source, PlaylistContent original,
-                       List<TaskResult> tasks, int skipped) {
+                       Destination destination, List<TaskResult> tasks, int skipped) {
         BatchResult { tasks = List.copyOf(tasks); }
         long count(State state) { return tasks.stream().filter(task -> task.state() == state).count(); }
         List<Song> failedSongs() {
@@ -97,13 +107,13 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
         return true;
     }
 
-    void addBatch(Batch batch, List<Song> songs, AudioQuality quality, Path directory, boolean tags, boolean cover) {
+    void addBatch(Batch batch, List<Song> songs, AudioQuality quality, boolean tags, boolean cover) {
         if (closed) return;
         int first = tasks.size();
         var ids = new HashSet<Long>();
         for (var song : songs) {
             if (!ids.add(song.id())) continue;
-            var task = create(batch.session, song, quality, directory, tags, cover, batch);
+            var task = create(batch.session, song, quality, batch.destination.directory(), tags, cover, batch);
             if (task == null) batch.skipped++;
             else { batch.tasks.add(task); batch.remaining++; }
         }
@@ -209,7 +219,7 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
         if (!closed && state == State.SUCCEEDED) successListener.run();
         var batch = task.batch;
         if (batch != null && --batch.remaining == 0 && !closed) {
-            var result = new BatchResult(batch.session, batch.source, batch.original,
+            var result = new BatchResult(batch.session, batch.source, batch.original, batch.destination,
                     batch.tasks.stream().map(item -> new TaskResult(item.song, item.state, item.status)).toList(), batch.skipped);
             SwingUtilities.invokeLater(() -> { if (!closed) batchListener.accept(result); });
         }

@@ -6,6 +6,9 @@ import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.playlist.MusicLink;
 import com.ncmbreaker.playlist.PlaylistWorkbook;
 import com.ncmbreaker.ui.UiStyle;
+import com.ncmbreaker.app.AppSettingsStore;
+import com.ncmbreaker.app.AppSettingsStore.Directory;
+import com.ncmbreaker.app.AppSettingsStore.Option;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -25,6 +28,7 @@ import java.util.List;
 import java.util.function.IntConsumer;
 
 public final class MusicPanel extends JPanel implements AutoCloseable {
+    private final AppSettingsStore settings;
     private final MusicController controller = new MusicController(this);
     private final MusicTableModel songs = new MusicTableModel();
     private final DownloadQueue queue = new DownloadQueue();
@@ -37,7 +41,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private final JToggleButton playlistLink = new JToggleButton("歌单");
     private final JTextField link = UiStyle.searchField("歌曲链接或 ID");
     private final JTextField filter = UiStyle.searchField("筛选歌曲、歌手、专辑");
-    private final JTextField output = new JTextField(Path.of(System.getProperty("user.home"), "Music", "NCM Breaker").toString());
+    private final JTextField output = new JTextField();
     private final JCheckBoxMenuItem tags = new JCheckBoxMenuItem("写入歌曲标签", true);
     private final JCheckBoxMenuItem cover = new JCheckBoxMenuItem("嵌入专辑封面", true);
     private final JLabel title = new JLabel("音乐下载");
@@ -48,13 +52,15 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private final JButton downloadAll = UiStyle.button("下载整个歌单");
     private final JButton downloadSelected = UiStyle.button("下载所选");
     private final JButton returnPlaylist = UiStyle.button("返回原歌单");
-    private final DownloadPanel downloads = new DownloadPanel(queue, this::chooseQuality, this::outputDirectory);
+    private final DownloadPanel downloads = new DownloadPanel(queue,
+            task -> chooseQuality(task.song, task.directory), this::outputDirectory);
     private final List<JDialog> dialogs = new ArrayList<>();
     private final ArrayDeque<DownloadQueue.BatchResult> batchResults = new ArrayDeque<>();
     private final Timer resultTimer = new Timer(250, event -> showNextBatchResult());
     private List<Playlist> playlists = List.of();
     private PlaylistContent currentContent;
     private PlaylistContent returnContent;
+    private DownloadQueue.Destination retryDestination;
     private boolean choosingBatch;
     private boolean showingResult;
     private boolean songsLoading;
@@ -68,8 +74,12 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private Runnable taskSuccessListener = () -> { };
     private IntConsumer taskCountListener = count -> { };
 
-    public MusicPanel() {
+    public MusicPanel(AppSettingsStore settings) {
         super(new BorderLayout());
+        this.settings = settings;
+        setOutputDirectory(defaultDownloadDirectory());
+        tags.setSelected(settings.option(Option.DOWNLOAD_TAGS));
+        cover.setSelected(settings.option(Option.DOWNLOAD_COVER));
         add(toolbar(), BorderLayout.NORTH);
         var split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sidebar(), content());
         split.setBorder(BorderFactory.createEmptyBorder());
@@ -86,6 +96,8 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
             resultTimer.start();
         });
         resetAccount(null);
+        tags.addActionListener(event -> settings.setOption(Option.DOWNLOAD_TAGS, tags.isSelected()));
+        cover.addActionListener(event -> settings.setOption(Option.DOWNLOAD_COVER, cover.isSelected()));
     }
 
     public void setLoginAction(Runnable action) { loginAction = action; }
@@ -344,12 +356,25 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
 
     private Path outputDirectory() { return Path.of(output.getText()).toAbsolutePath().normalize(); }
 
+    private Path defaultDownloadDirectory() {
+        return settings.directory(Directory.DOWNLOAD_OUTPUT, Path.of(System.getProperty("user.home"), "Music", "NCM Breaker"));
+    }
+
+    private void setOutputDirectory(Path directory) {
+        output.setText(directory.toString());
+        output.setToolTipText(output.getText());
+        output.setCaretPosition(0);
+    }
+
     private void chooseQuality(Song song) {
+        chooseQuality(song, retryDestination == null ? outputDirectory() : retryDestination.directory());
+    }
+
+    private void chooseQuality(Song song, Path directory) {
         var session = controller.session();
         if (session == null || session.account() == null) {
             showStatus("请先登录网易云账号"); loginAction.run(); return;
         }
-        var directory = outputDirectory();
         var dialog = new QualityDialog(SwingUtilities.getWindowAncestor(this), session, song, (resolved, quality) -> {
             if (closed || controller.session() != session) return;
             boolean added = queue.add(session, resolved, quality, directory, tags.isSelected(), cover.isSelected());
@@ -373,16 +398,21 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         var snapshot = List.copyOf(unique.values());
         if (snapshot.isEmpty()) return;
         var original = returnContent == null ? content : returnContent;
-        var directory = outputDirectory();
+        var destination = retryDestination == null
+                ? DownloadQueue.Destination.forPlaylist(outputDirectory(), settings.option(Option.PLAYLIST_DIRECTORIES), original)
+                : retryDestination;
         boolean writeTags = tags.isSelected();
         boolean writeCover = cover.isSelected();
         choosingBatch = true;
         updateBatchActions();
         try {
-            var dialog = new BatchDownloadDialog(SwingUtilities.getWindowAncestor(this), content, snapshot, quality -> {
+            var dialog = new BatchDownloadDialog(SwingUtilities.getWindowAncestor(this), content, snapshot,
+                    original, settings.batchQuality(), destination, selection -> {
                 if (closed || controller.session() != session) return;
-                var batch = new DownloadQueue.Batch(session, content, original);
-                queue.addBatch(batch, snapshot, quality, directory, writeTags, writeCover);
+                settings.setBatchPreferences(selection.quality(), selection.destination().byPlaylist());
+                if (returnContent == original) retryDestination = selection.destination();
+                var batch = new DownloadQueue.Batch(session, content, original, selection.destination());
+                queue.addBatch(batch, snapshot, selection.quality(), writeTags, writeCover);
                 showStatus(batch.tasks.isEmpty() ? "歌曲已在下载队列，未重复加入"
                         : "已加入 " + batch.tasks.size() + " 首歌曲"
                         + (batch.skipped == 0 ? "" : "，另有 " + batch.skipped + " 首已在下载队列"));
@@ -435,16 +465,19 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         var playlist = new Playlist(0, "失败歌曲 · " + result.original().playlist().name(), failed.size(), "", Category.CREATED);
         showContent(new PlaylistContent(playlist, failed, failed.size()));
         returnContent = result.original();
+        retryDestination = result.destination();
+        setOutputDirectory(retryDestination.baseDirectory());
         updateBatchActions();
         showMusicAction.run();
     }
 
     private void importPlaylist() {
-        var chooser = new JFileChooser();
+        var chooser = new JFileChooser(settings.chooserDirectory(Directory.PLAYLIST_IMPORT, null));
         chooser.setDialogTitle("导入歌单");
         chooser.setFileFilter(new FileNameExtensionFilter("Excel 歌单 (*.xlsx)", "xlsx"));
         chooser.setAcceptAllFileFilterUsed(false);
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+            settings.setDirectory(Directory.PLAYLIST_IMPORT, chooser.getSelectedFile().toPath().toAbsolutePath().getParent());
             controller.importFile(chooser.getSelectedFile().toPath());
         }
     }
@@ -452,7 +485,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     private void exportPlaylist() {
         var content = currentContent;
         if (content == null || songsLoading || exporting) return;
-        var chooser = new JFileChooser(output.getText());
+        var chooser = new JFileChooser(settings.chooserDirectory(Directory.PLAYLIST_EXPORT, outputDirectory()));
         chooser.setDialogTitle("导出歌单");
         chooser.setFileFilter(new FileNameExtensionFilter("Excel 歌单 (*.xlsx)", "xlsx"));
         chooser.setAcceptAllFileFilterUsed(false);
@@ -465,6 +498,7 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
         boolean overwrite = Files.exists(path);
         if (overwrite && JOptionPane.showConfirmDialog(this, "文件已存在，是否覆盖？\n" + path,
                 "导出歌单", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
+        settings.setDirectory(Directory.PLAYLIST_EXPORT, path.getParent());
         controller.exportFile(path, content, overwrite);
     }
 
@@ -479,19 +513,24 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     }
 
     private void selectDirectory() {
-        var chooser = new JFileChooser(output.getText());
+        var chooser = new JFileChooser(AppSettingsStore.existingDirectory(outputDirectory()));
         chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         chooser.setDialogTitle("选择保存目录");
         if (chooser.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-            output.setText(chooser.getSelectedFile().getAbsolutePath());
-            output.setToolTipText(output.getText());
-            output.setCaretPosition(0);
+            var directory = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+            setOutputDirectory(directory);
+            settings.setDirectory(Directory.DOWNLOAD_OUTPUT, directory);
+            if (retryDestination != null) {
+                retryDestination = DownloadQueue.Destination.forPlaylist(directory, retryDestination.byPlaylist(), returnContent);
+            }
         }
     }
 
     void resetAccount(LoginSession.Account value) {
         currentContent = null;
         returnContent = null;
+        retryDestination = null;
+        setOutputDirectory(defaultDownloadDirectory());
         songsLoading = false;
         updateExport();
         playlists = List.of();
@@ -549,6 +588,8 @@ public final class MusicPanel extends JPanel implements AutoCloseable {
     }
     void showContent(PlaylistContent content) {
         returnContent = null;
+        retryDestination = null;
+        setOutputDirectory(defaultDownloadDirectory());
         songs.setSongs(content.songs()); sorter.setSortKeys(null); filter.setText("");
         changingList = true;
         playlistList.clearSelection();
