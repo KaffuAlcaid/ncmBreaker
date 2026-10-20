@@ -2,7 +2,7 @@
 
 NCM Breaker 支持网易云音乐下载、歌单管理和本地 NCM 文件转换
 
-**[下载 Windows 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.2.0/NcmBreaker-0.2.0-windows-x86_64.zip)** · [下载 Linux 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.2.0/NcmBreaker-0.2.0-linux-x86_64.tar.gz) · [通用 JAR](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.2.0/NcmBreaker-0.2.0.jar) · [全部版本](https://github.com/KaffuAlcaid/ncmBreaker/releases)
+**[下载 Windows 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.3.0/NcmBreaker-0.3.0-windows-x86_64.zip)** · [下载 Linux 版](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.3.0/NcmBreaker-0.3.0-linux-x86_64.tar.gz) · [通用 JAR](https://github.com/KaffuAlcaid/ncmBreaker/releases/download/v0.3.0/NcmBreaker-0.3.0.jar) · [全部版本](https://github.com/KaffuAlcaid/ncmBreaker/releases)
 
 ## 主要功能
 
@@ -28,19 +28,19 @@ Windows 解压后运行 `NcmBreaker.exe`，Linux 运行 `NcmBreaker/bin/NcmBreak
 启动图形界面：
 
 ```text
-java -jar NcmBreaker-0.2.0.jar
+java -jar NcmBreaker-0.3.0.jar
 ```
 
 检查 NCM 文件信息：
 
 ```text
-java -jar NcmBreaker-0.2.0.jar --inspect "音乐目录"
+java -jar NcmBreaker-0.3.0.jar --inspect "音乐目录"
 ```
 
 将 NCM 文件或文件夹转换到指定目录：
 
 ```text
-java -jar NcmBreaker-0.2.0.jar -o "输出目录" "音乐目录"
+java -jar NcmBreaker-0.3.0.jar -o "输出目录" "音乐目录"
 ```
 
 </details>
