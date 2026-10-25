@@ -51,7 +51,7 @@ final class QualityDialog extends JDialog {
         root.setBorder(BorderFactory.createEmptyBorder(18, 20, 16, 20));
         var title = new JLabel(song.title());
         title.putClientProperty("html.disable", Boolean.TRUE);
-        title.setToolTipText(song.title() + " · " + song.artistText());
+        title.setToolTipText(song.title() + "（" + song.artistText() + "）");
         title.setFont(title.getFont().deriveFont(16f));
         var heading = new JPanel(new BorderLayout(0, 6));
         heading.add(title, BorderLayout.NORTH);
@@ -124,9 +124,9 @@ final class QualityDialog extends JDialog {
             var label = quality.toString();
             if (resource.isPresent()) {
                 var item = resource.get();
-                label += "  ·  %.1f MB".formatted(item.bytes() / 1048576.0);
-                if (item.sampleRate() > 0) label += "  ·  %.1f kHz".formatted(item.sampleRate() / 1000.0);
-            } else label += "  ·  未提供";
+                label += "：%.1f MB".formatted(item.bytes() / 1048576.0);
+                if (item.sampleRate() > 0) label += "，%.1f kHz".formatted(item.sampleRate() / 1000.0);
+            } else label += "：未提供";
             var button = new JRadioButton(label);
             button.setEnabled(resource.isPresent());
             button.setSelected(quality == preferred);

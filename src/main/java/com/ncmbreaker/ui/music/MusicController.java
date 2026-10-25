@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Consumer;
 
 final class MusicController implements AutoCloseable {
     private final MusicPanel view;
@@ -42,15 +43,16 @@ final class MusicController implements AutoCloseable {
         if (libraryWorker != null) libraryWorker.cancel(true);
         var current = session;
         long generation = sessionGeneration;
+        long navigation = songsGeneration;
         view.libraryLoading(true);
         libraryWorker = new SwingWorker<List<Playlist>, Void>() {
             @Override protected List<Playlist> doInBackground() throws Exception { return new MusicService(current).userPlaylists(); }
             @Override protected void done() {
                 if (closed || generation != sessionGeneration || libraryWorker != this) return;
                 libraryWorker = null; view.libraryLoading(false);
-                try { view.showPlaylists(get()); }
+                try { view.showPlaylists(get(), navigation == songsGeneration); }
                 catch (CancellationException ignored) { }
-                catch (Exception exception) { view.showStatus(message(exception)); }
+                catch (Exception exception) { view.showLibraryError(message(exception)); }
             }
         };
         libraryWorker.execute();
@@ -62,18 +64,36 @@ final class MusicController implements AutoCloseable {
         load(() -> new MusicService(current).playlist(playlist.id(), count -> { }));
     }
 
-    void open(String value, boolean songId) {
+    void search(String keywords, SearchType type, int offset) {
+        if (closed) return;
+        if (session == null) { view.showStatus("请先登录网易云账号"); return; }
+        if (keywords.isBlank()) { view.showStatus("请输入搜索关键词"); return; }
+        var current = session;
+        load(() -> new MusicService(current).search(keywords, type, offset), view::showSearchResults, "正在搜索");
+    }
+
+    void openSearchCollection(long id, SearchType type) {
+        if (closed || session == null) return;
+        var current = session;
+        var previous = view.captureView();
+        load(() -> type == SearchType.ALBUM ? new MusicService(current).album(id)
+                        : new MusicService(current).playlist(id, count -> { }),
+                content -> view.showSearchCollection(content, previous), "正在读取歌曲");
+    }
+
+    void open(String value, SearchType defaultType) {
         if (session == null) { view.showStatus("请先登录网易云账号"); return; }
         try {
-            var link = MusicLink.parse(value, songId);
-            view.selectLinkType(link.song());
+            var link = MusicLink.parse(value, defaultType);
+            view.selectLinkType(link.type());
             var current = session;
             if (link.song()) {
                 load(() -> {
                     var songs = new MusicService(current).songs(List.of(link.id()), count -> { });
                     return new PlaylistContent(new Playlist(0, "单曲", 1, "", Category.CREATED), songs, 1);
                 });
-            } else load(() -> new MusicService(current).playlist(link.id(), count -> { }));
+            } else if (link.type() == SearchType.ALBUM) load(() -> new MusicService(current).album(link.id()));
+            else load(() -> new MusicService(current).playlist(link.id(), count -> { }));
         } catch (MusicException exception) { view.showStatus(exception.getMessage()); }
     }
 
@@ -110,16 +130,21 @@ final class MusicController implements AutoCloseable {
     }
 
     private void load(Callable<PlaylistContent> operation) {
+        load(operation, view::showContent, "正在读取歌曲");
+    }
+
+    private <T> void load(Callable<T> operation, Consumer<T> display, String message) {
         if (closed) return;
         if (songsWorker != null) songsWorker.cancel(true);
         long generation = ++songsGeneration;
         view.songsLoading(true);
-        songsWorker = new SwingWorker<PlaylistContent, Void>() {
-            @Override protected PlaylistContent doInBackground() throws Exception { return operation.call(); }
+        view.showStatus(message);
+        songsWorker = new SwingWorker<T, Void>() {
+            @Override protected T doInBackground() throws Exception { return operation.call(); }
             @Override protected void done() {
                 if (closed || generation != songsGeneration) return;
                 songsWorker = null; view.songsLoading(false);
-                try { view.showContent(get()); }
+                try { display.accept(get()); }
                 catch (CancellationException ignored) { }
                 catch (Exception exception) { view.showStatus(message(exception)); }
             }

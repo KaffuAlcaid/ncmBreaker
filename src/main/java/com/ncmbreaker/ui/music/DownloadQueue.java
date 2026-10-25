@@ -7,6 +7,7 @@ import com.ncmbreaker.netease.music.AudioQuality;
 import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.netease.music.MusicModels.Song;
 import com.ncmbreaker.netease.music.MusicModels.PlaylistContent;
+import com.ncmbreaker.netease.music.MusicModels.SearchResult;
 import com.ncmbreaker.netease.music.MusicService;
 import com.ncmbreaker.playlist.PlaylistWorkbook;
 import javax.swing.SwingUtilities;
@@ -43,29 +44,42 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
 
     private record TaskKey(LoginSession session, long songId, AudioQuality quality, Path directory) { }
 
+    record Source(String name, List<Song> songs, int expectedCount, PlaylistContent playlist) {
+        Source { songs = List.copyOf(songs); }
+        static Source forPlaylist(PlaylistContent content) {
+            return new Source(content.playlist().name(), content.songs(), content.expectedCount(), content);
+        }
+        static Source forSearch(SearchResult result) {
+            return new Source("歌曲搜索：" + result.query(), result.songs(), result.songs().size(), null);
+        }
+    }
+
     record Destination(Path baseDirectory, boolean byPlaylist, Path directory) {
-        static Destination forPlaylist(Path baseDirectory, boolean byPlaylist, PlaylistContent playlist) {
+        static Destination forSource(Path baseDirectory, boolean byPlaylist, Source source) {
             var base = baseDirectory.toAbsolutePath().normalize();
-            return new Destination(base, byPlaylist, byPlaylist ? base.resolve(PlaylistWorkbook.baseName(playlist)) : base);
+            boolean grouped = byPlaylist && source.playlist() != null;
+            return new Destination(base, grouped, grouped ? base.resolve(PlaylistWorkbook.baseName(source.playlist())) : base);
         }
     }
 
     static final class Batch {
         final LoginSession session;
-        final PlaylistContent source;
-        final PlaylistContent original;
+        final Source source;
+        final Source original;
+        final MusicViewState view;
         final Destination destination;
         final List<Task> tasks = new ArrayList<>();
         int remaining;
         int skipped;
-        Batch(LoginSession session, PlaylistContent source, PlaylistContent original, Destination destination) {
+        Batch(LoginSession session, Source source, Source original, MusicViewState view, Destination destination) {
             this.session = session; this.source = source; this.original = original;
+            this.view = view;
             this.destination = destination;
         }
     }
 
     record TaskResult(Song song, State state, String message) { }
-    record BatchResult(LoginSession session, PlaylistContent source, PlaylistContent original,
+    record BatchResult(LoginSession session, Source source, Source original, MusicViewState view,
                        Destination destination, List<TaskResult> tasks, int skipped) {
         BatchResult { tasks = List.copyOf(tasks); }
         long count(State state) { return tasks.stream().filter(task -> task.state() == state).count(); }
@@ -179,12 +193,12 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
             var result = new AudioDownloader().download(authorization, song, task.directory, task.tags, task.cover, task.cancellation,
                     (done, total) -> {
                         double seconds = Math.max(0.1, (System.nanoTime() - start) / 1_000_000_000.0);
-                        var progress = "%.1f%% · %.1f MB / %.1f MB · %.1f MB/s".formatted(
+                        var progress = "%.1f%%：%.1f MB / %.1f MB，%.1f MB/s".formatted(
                                 done * 100.0 / total, done / 1048576.0, total / 1048576.0, done / 1048576.0 / seconds);
                         update(task, done == total ? "正在校验" : "正在下载", progress);
                     }, stage -> update(task, stage, "100%"));
-            var status = "完成 · " + result.format().toUpperCase(java.util.Locale.ROOT);
-            if (!result.warning().isBlank()) status += " · " + result.warning();
+            var status = "完成：" + result.format().toUpperCase(java.util.Locale.ROOT);
+            if (!result.warning().isBlank()) status += "，" + result.warning();
             complete(task, State.SUCCEEDED, status, result.file());
         } catch (CancellationException exception) {
             complete(task, State.CANCELLED, "已取消", null);
@@ -219,7 +233,7 @@ final class DownloadQueue extends AbstractTableModel implements AutoCloseable {
         if (!closed && state == State.SUCCEEDED) successListener.run();
         var batch = task.batch;
         if (batch != null && --batch.remaining == 0 && !closed) {
-            var result = new BatchResult(batch.session, batch.source, batch.original, batch.destination,
+            var result = new BatchResult(batch.session, batch.source, batch.original, batch.view, batch.destination,
                     batch.tasks.stream().map(item -> new TaskResult(item.song, item.state, item.status)).toList(), batch.skipped);
             SwingUtilities.invokeLater(() -> { if (!closed) batchListener.accept(result); });
         }

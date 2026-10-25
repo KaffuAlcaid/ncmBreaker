@@ -303,7 +303,7 @@ public final class MainWindow extends JFrame {
                 var entry = tableModel.entryAt(convertRowIndexToModel(row));
                 return entry.message == null || entry.message.isBlank()
                         ? entry.source.toString()
-                        : entry.source + " — " + entry.message;
+                        : entry.source + "：" + entry.message;
             }
         };
         result.setRowHeight(46);
@@ -597,9 +597,9 @@ public final class MainWindow extends JFrame {
 
         var summary = entries.size() + " 个文件";
         if (success > 0 || failed > 0) {
-            summary += "  ·  已完成 " + success + "  ·  失败 " + failed;
+            summary += "：已完成 " + success + "，失败 " + failed;
         } else if (scanWorker != null) {
-            summary += "  ·  正在检测";
+            summary += "：正在检测";
         }
         summaryLabel.setText(summary);
     }

@@ -6,8 +6,12 @@ import java.util.List;
 
 final class MusicTableModel extends AbstractTableModel {
     private List<Song> songs = List.of();
+    private int offset;
     private static final String[] COLUMNS = {"序号", "歌曲 / 歌手", "专辑", "时长", "下载"};
-    void setSongs(List<Song> songs) { this.songs = List.copyOf(songs); fireTableDataChanged(); }
+    void setSongs(List<Song> songs) { setSongs(songs, 0); }
+    void setSongs(List<Song> songs, int offset) {
+        this.songs = List.copyOf(songs); this.offset = offset; fireTableDataChanged();
+    }
     Song song(int row) { return songs.get(row); }
     @Override public int getRowCount() { return songs.size(); }
     @Override public int getColumnCount() { return COLUMNS.length; }
@@ -19,7 +23,7 @@ final class MusicTableModel extends AbstractTableModel {
     @Override public Object getValueAt(int row, int column) {
         var song = songs.get(row);
         return switch (column) {
-            case 0 -> row + 1;
+            case 0 -> offset + row + 1;
             case 1 -> song;
             case 2 -> song.album();
             case 3 -> song.durationMillis() <= 0 ? "" : "%d:%02d".formatted(song.durationMillis() / 60000, song.durationMillis() / 1000 % 60);

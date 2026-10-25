@@ -95,7 +95,7 @@ public final class AccountMenu extends JButton implements AutoCloseable {
         refreshMembership.setEnabled(!loading && session != null && !closed);
         var account = session == null ? null : session.account();
         setToolTipText(account == null ? "登录网易云账号" : panel.hasSaveWarning()
-                ? "登录状态未保存，下次启动需要重新扫码" : account.nickname() + " · " + account.userId() + " · " + label);
+                ? "登录状态未保存，下次启动需要重新扫码" : account.nickname() + "（账号 ID：" + account.userId() + "）：" + label);
         if (popup != null && popup.isVisible()) popup.pack();
     }
 

@@ -18,6 +18,59 @@ public final class MusicService {
 
     public MusicService(LoginSession session) { this.session = session; }
 
+    public SearchResult search(String keywords, SearchType type, int offset) throws IOException, InterruptedException {
+        var query = keywords.strip();
+        if (query.isEmpty()) throw new MusicException("请输入搜索关键词");
+        if (offset < 0) throw new IllegalArgumentException("Negative search offset");
+        int limit = 30;
+        var parameters = new JsonObject();
+        parameters.addProperty("s", query);
+        parameters.addProperty("type", type.code());
+        parameters.addProperty("limit", limit);
+        parameters.addProperty("offset", offset);
+        parameters.addProperty("total", true);
+        var response = post("/api/cloudsearch/pc", parameters, NeteaseClient.Protocol.WEAPI);
+        var result = object(response, "result");
+        var songs = new ArrayList<Song>();
+        var playlists = new ArrayList<PlaylistHit>();
+        var albums = new ArrayList<AlbumHit>();
+        var key = switch (type) {
+            case SONG -> "songs";
+            case PLAYLIST -> "playlists";
+            case ALBUM -> "albums";
+        };
+        var items = array(result, key);
+        for (var value : items) {
+            if (!value.isJsonObject()) continue;
+            var item = value.getAsJsonObject();
+            if (number(item, "id") <= 0) continue;
+            switch (type) {
+                case SONG -> songs.add(parseSong(item));
+                case PLAYLIST -> playlists.add(new PlaylistHit(number(item, "id"), text(item, "name"),
+                        text(object(item, "creator"), "nickname"), (int) number(item, "trackCount"), text(item, "coverImgUrl")));
+                case ALBUM -> {
+                    var artists = new ArrayList<String>();
+                    for (var artist : array(item, "artists")) {
+                        if (artist.isJsonObject()) artists.add(text(artist.getAsJsonObject(), "name"));
+                    }
+                    if (artists.isEmpty()) artists.add(text(object(item, "artist"), "name"));
+                    albums.add(new AlbumHit(number(item, "id"), text(item, "name"), String.join(" / ", artists),
+                            (int) number(item, "size"), text(item, "picUrl")));
+                }
+            }
+        }
+        var countKey = switch (type) {
+            case SONG -> "songCount";
+            case PLAYLIST -> "playlistCount";
+            case ALBUM -> "albumCount";
+        };
+        int total = result.has(countKey) ? (int) Math.min(Integer.MAX_VALUE, Math.max(0, number(result, countKey))) : -1;
+        boolean more = total >= 0 ? (long) offset + items.size() < total : items.size() == limit;
+        if (result.has("hasMore")) more = bool(result, "hasMore");
+        else if (result.has("more")) more = bool(result, "more");
+        return new SearchResult(type, query, offset, limit, total, more && !items.isEmpty(), songs, playlists, albums);
+    }
+
     public List<Playlist> userPlaylists() throws IOException, InterruptedException {
         var account = session.account();
         if (account == null) throw new MusicException("请先登录网易云账号");
@@ -67,6 +120,20 @@ public final class MusicService {
         var songs = songs(ids, progress);
         return new PlaylistContent(new Playlist(id, text(item, "name"), count,
                 text(item, "coverImgUrl"), Category.CREATED), songs, count);
+    }
+
+    public PlaylistContent album(long id) throws IOException, InterruptedException {
+        var response = post("/api/v1/album/" + id, new JsonObject(), NeteaseClient.Protocol.WEAPI);
+        var album = object(response, "album");
+        if (number(album, "id") != id) throw new MusicException("未找到该专辑，或当前账号无法访问");
+        var songs = new ArrayList<Song>();
+        for (var item : array(response, "songs")) {
+            if (item.isJsonObject() && number(item.getAsJsonObject(), "id") > 0) songs.add(parseSong(item.getAsJsonObject()));
+        }
+        int count = album.has("size") ? (int) number(album, "size") : songs.size();
+        if (songs.isEmpty() && count > 0) throw new MusicException("服务器没有返回专辑中的歌曲，请重试");
+        return new PlaylistContent(new Playlist(id, text(album, "name"), count, text(album, "picUrl"), Category.CREATED),
+                songs, count, CollectionType.ALBUM);
     }
 
     public List<Song> songs(List<Long> ids, IntConsumer progress) throws IOException, InterruptedException {

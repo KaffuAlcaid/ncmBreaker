@@ -15,6 +15,11 @@ final class RowAction extends AbstractCellEditor implements TableCellRenderer, T
     private final JButton editor = button();
     private int modelRow;
     RowAction(IntConsumer action) {
+        this(action, "选择音质并下载");
+    }
+    RowAction(IntConsumer action, String tooltip) {
+        renderer.setToolTipText(tooltip);
+        editor.setToolTipText(tooltip);
         editor.addActionListener(event -> {
             int row = modelRow;
             fireEditingStopped();

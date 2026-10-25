@@ -130,8 +130,8 @@ final class DownloadPanel extends JPanel {
         clear.setEnabled(finished > 0);
         int total = queue.getRowCount();
         summary.setText(total == 0 ? "暂无下载任务"
-                : total + " 个任务 · " + active + " 个进行中 · " + (total - finished - active)
-                + " 个等待中 · " + succeeded + " 个完成 · " + failed + " 个失败 · " + cancelled + " 个取消");
+                : total + " 个任务：" + active + " 个进行中，" + (total - finished - active)
+                + " 个等待中，" + succeeded + " 个完成，" + failed + " 个失败，" + cancelled + " 个取消");
         showStatus(task == null ? " " : task.output == null ? task.directory.toString() : task.output.toString());
     }
 

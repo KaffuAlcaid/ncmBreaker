@@ -15,7 +15,7 @@ final class BatchResultDialog extends JDialog {
         var root = new JPanel(new BorderLayout(0, 16));
         root.setBorder(BorderFactory.createEmptyBorder(20, 22, 18, 22));
         var heading = new JPanel(new BorderLayout(0, 12));
-        var title = text(result.source().playlist().name());
+        var title = text(result.source().name());
         title.setFont(title.getFont().deriveFont(16f));
         heading.add(title, BorderLayout.NORTH);
         long failed = result.count(FAILED);
@@ -24,7 +24,9 @@ final class BatchResultDialog extends JDialog {
         if (cancelled > 0) summary.append("，取消 ").append(cancelled).append(" 首");
         if (result.skipped() > 0) summary.append("\n另有 ").append(result.skipped()).append(" 首已在下载队列，未重复加入");
         int unread = result.source().expectedCount() - result.source().songs().size();
-        if (unread > 0) summary.append("\n原歌单还有 ").append(unread).append(" 首未读取");
+        if (unread > 0) summary.append("\n原")
+                .append(result.source().playlist() == null ? "歌单" : result.source().playlist().type())
+                .append("还有 ").append(unread).append(" 首未读取");
         heading.add(text(summary.toString()), BorderLayout.CENTER);
         root.add(heading, BorderLayout.NORTH);
         if (failed > 0) {
@@ -61,7 +63,7 @@ final class BatchResultDialog extends JDialog {
         confirm.addActionListener(event -> dispose());
         actions.add(confirm);
         if (failed > 0) {
-            var failures = UiStyle.button("展示失败歌单");
+            var failures = UiStyle.button("展示失败歌曲");
             failures.setName("batch.showFailures");
             failures.addActionListener(event -> { showFailures = true; dispose(); });
             actions.add(failures);

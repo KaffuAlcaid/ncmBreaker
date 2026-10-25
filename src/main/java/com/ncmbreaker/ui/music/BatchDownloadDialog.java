@@ -1,7 +1,6 @@
 package com.ncmbreaker.ui.music;
 
 import com.ncmbreaker.netease.music.AudioQuality;
-import com.ncmbreaker.netease.music.MusicModels.PlaylistContent;
 import com.ncmbreaker.netease.music.MusicModels.Song;
 import com.ncmbreaker.ui.UiStyle;
 import javax.swing.*;
@@ -12,19 +11,20 @@ import java.util.function.Consumer;
 final class BatchDownloadDialog extends JDialog {
     record Selection(AudioQuality quality, DownloadQueue.Destination destination) { }
 
-    BatchDownloadDialog(Window owner, PlaylistContent source, List<Song> songs, PlaylistContent original,
+    BatchDownloadDialog(Window owner, DownloadQueue.Source source, List<Song> songs, DownloadQueue.Source original,
                         AudioQuality preferred, DownloadQueue.Destination initial, Consumer<Selection> onDownload) {
         super(owner, "批量下载", ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         var root = new JPanel(new BorderLayout(0, 18));
         root.setBorder(BorderFactory.createEmptyBorder(20, 22, 18, 22));
         var information = new JPanel(new BorderLayout(0, 12));
-        var title = text(source.playlist().name());
+        var title = text(source.name());
         title.setFont(title.getFont().deriveFont(16f));
         information.add(title, BorderLayout.NORTH);
         var message = new StringBuilder("本次下载 " + songs.size() + " 首歌曲");
         if (source.expectedCount() != source.songs().size()) {
-            message.append("\n歌单标记 ").append(source.expectedCount()).append(" 首，已读取 ")
+            message.append("\n").append(source.playlist() == null ? "歌单" : source.playlist().type())
+                    .append("标记 ").append(source.expectedCount()).append(" 首，已读取 ")
                     .append(source.songs().size()).append(" 首");
         }
         long missing = songs.stream().filter(song -> !song.detailAvailable()).count();
@@ -42,7 +42,9 @@ final class BatchDownloadDialog extends JDialog {
         var settings = new JPanel(new BorderLayout(0, 14));
         settings.add(qualityPanel, BorderLayout.NORTH);
         var destination = new JPanel(new BorderLayout(0, 10));
-        var byPlaylist = new JCheckBox("按歌单建立子目录", initial.byPlaylist());
+        var byPlaylist = new JCheckBox("按" + (original.playlist() == null ? "歌单" : original.playlist().type())
+                + "建立子目录", initial.byPlaylist());
+        byPlaylist.setVisible(original.playlist() != null);
         byPlaylist.setOpaque(false);
         byPlaylist.setName("batch.byPlaylist");
         destination.add(byPlaylist, BorderLayout.NORTH);
@@ -55,7 +57,7 @@ final class BatchDownloadDialog extends JDialog {
         previewScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         destination.add(previewScroll, BorderLayout.CENTER);
         byPlaylist.addActionListener(event -> {
-            var selected = DownloadQueue.Destination.forPlaylist(initial.baseDirectory(), byPlaylist.isSelected(), original);
+            var selected = DownloadQueue.Destination.forSource(initial.baseDirectory(), byPlaylist.isSelected(), original);
             preview.setText("保存到\n" + selected.directory());
             preview.setToolTipText(selected.directory().toString());
             preview.setCaretPosition(0);
@@ -71,7 +73,7 @@ final class BatchDownloadDialog extends JDialog {
             download.setEnabled(false);
             dispose();
             var selected = byPlaylist.isSelected() == initial.byPlaylist() ? initial
-                    : DownloadQueue.Destination.forPlaylist(initial.baseDirectory(), byPlaylist.isSelected(), original);
+                    : DownloadQueue.Destination.forSource(initial.baseDirectory(), byPlaylist.isSelected(), original);
             onDownload.accept(new Selection((AudioQuality) quality.getSelectedItem(), selected));
         });
         actions.add(cancel); actions.add(download);

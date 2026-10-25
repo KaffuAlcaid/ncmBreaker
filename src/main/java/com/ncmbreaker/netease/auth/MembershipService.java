@@ -26,7 +26,7 @@ public final class MembershipService {
 
     public record Info(Type type, int level, Instant expiresAt) {
         public static Info unknown() { return new Info(Type.UNKNOWN, 0, null); }
-        public String label() { return type.label + (level > 0 ? " · Lv" + level : ""); }
+        public String label() { return type.label + (level > 0 ? "：Lv" + level : ""); }
     }
 
     private MembershipService() { }
