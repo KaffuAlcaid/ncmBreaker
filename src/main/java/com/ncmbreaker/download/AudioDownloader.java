@@ -2,14 +2,17 @@ package com.ncmbreaker.download;
 
 import com.ncmbreaker.netease.music.MusicException;
 import com.ncmbreaker.netease.music.MusicModels.AuthorizedDownload;
-import com.ncmbreaker.netease.music.MusicModels.Song;
+import com.ncmbreaker.audio.AudioProcessingService;
+import com.ncmbreaker.audio.AudioResult;
+import com.ncmbreaker.audio.OutputPlanner;
+import com.ncmbreaker.audio.ProcessingOptions;
+import com.ncmbreaker.audio.TrackMetadata;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -23,47 +26,48 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class AudioDownloader {
     @FunctionalInterface public interface Progress { void update(long completed, long total); }
-    public record Result(Path file, String format, String warning) { }
+    @FunctionalInterface public interface CommitListener {
+        void beforeMove(Path temporary, Path target, TrackMetadata metadata) throws IOException;
+        default void temporaryCreated(Path temporary) throws IOException { }
+    }
     private static final HttpClient HTTP = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15))
             .followRedirects(HttpClient.Redirect.NEVER).build();
-    private static final Object OUTPUT_LOCK = new Object();
 
-    public Result download(AuthorizedDownload authorization, Song song, Path directory,
-                           boolean tags, boolean cover, DownloadCancellation cancellation, Progress progress,
+    public AudioResult download(AuthorizedDownload authorization, TrackMetadata metadata, OutputPlanner.Context context,
+                           ProcessingOptions options, AudioProcessingService processing,
+                           DownloadCancellation cancellation, Progress progress,
                            java.util.function.Consumer<String> stage) throws Exception {
+        return download(authorization, metadata, context, options, processing, cancellation, progress, stage,
+                (source, target, information) -> { });
+    }
+
+    public AudioResult download(AuthorizedDownload authorization, TrackMetadata metadata, OutputPlanner.Context context,
+                           ProcessingOptions options, AudioProcessingService processing,
+                           DownloadCancellation cancellation, Progress progress,
+                           java.util.function.Consumer<String> stage, CommitListener listener) throws Exception {
         cancellation.check();
-        Files.createDirectories(directory);
-        var temporary = Files.createTempFile(directory, ".ncm-breaker-download-", ".part");
+        if (options.enrich() || options.needsLyrics()) stage.accept("正在获取歌曲资料");
+        var prepared = processing.prepare(metadata, options, cancellation);
+        var declared = authorization.declaredFormat().toLowerCase(Locale.ROOT);
+        if (options.conflictPolicy() == com.ncmbreaker.NcmFileIO.ConflictPolicy.SKIP
+                && java.util.Set.of("mp3", "flac", "m4a", "ogg", "ncm").contains(declared)) {
+            var target = OutputPlanner.path(context, prepared.metadata(), authorization.actual().toString(), declared, options);
+            if (Files.isRegularFile(target)) return new AudioResult(target, declared, 0, prepared.metadata(),
+                    AudioResult.Outcome.SKIPPED, java.util.List.of(), prepared.warnings());
+        }
+        OutputPlanner.preflight(context.directory(), authorization.bytes(), options.needsTags() || options.exportCover());
+        var temporary = Files.createTempFile(context.directory(), ".ncm-breaker-download-", ".part");
         try {
+            listener.temporaryCreated(temporary);
             fetch(authorization, temporary, cancellation, progress);
             cancellation.check();
             String format;
             try (var input = Files.newInputStream(temporary)) { format = format(input.readNBytes(16)); }
-            if (format == null) throw new MusicException("下载内容的音频格式暂不受支持，文件未保存");
-            String warning = "";
-            if (tags || cover) {
-                stage.accept("正在写入歌曲信息");
-                try {
-                    warning = com.ncmbreaker.audio.AudioTagWriter.write(temporary, format, song, tags, cover, cancellation);
-                } catch (java.util.concurrent.CancellationException exception) { throw exception; }
-                catch (Exception exception) { cancellation.check(); warning = "标签写入失败，已保留完整音频"; }
-            }
-            var base = safeName(song.artistText().isBlank() ? song.title() : song.artistText() + " - " + song.title());
-            base += " [" + authorization.actual() + "]";
-            for (int number = 0; ; number++) {
-                cancellation.check();
-                var name = base + (number == 0 ? "" : " (" + number + ")") + "." + format;
-                var target = directory.resolve(name);
-                try {
-                    synchronized (OUTPUT_LOCK) {
-                        cancellation.check();
-                        Files.move(temporary, target);
-                    }
-                    return new Result(target, format, warning);
-                } catch (FileAlreadyExistsException ignored) {
-                    // Another completed job may have claimed the same filename.
-                }
-            }
+            if (format == null) throw new MusicException(MusicException.Kind.FORMAT, "下载内容的音频格式暂不受支持，文件未保存");
+            stage.accept(options.needsTags() ? "正在写入歌曲信息" : "正在保存文件");
+            return processing.save(temporary, format, authorization.bytes(), prepared, new byte[0], context,
+                    authorization.actual().toString(), options, cancellation,
+                    (source, target) -> listener.beforeMove(source, target, prepared.metadata()));
         } finally {
             Files.deleteIfExists(temporary);
         }
@@ -80,6 +84,11 @@ public final class AudioDownloader {
             cancellation.bind(() -> future.cancel(true));
             HttpResponse<java.io.InputStream> response;
             try { response = future.get(25, TimeUnit.SECONDS); }
+            catch (java.util.concurrent.ExecutionException exception) {
+                future.cancel(true);
+                if (exception.getCause() instanceof IOException) throw new MusicException(MusicException.Kind.NETWORK, "音频连接失败，请检查网络后重试");
+                throw exception;
+            }
             catch (Exception exception) { future.cancel(true); throw exception; }
             try (var input = response.body()) {
                 cancellation.bind(input);
@@ -90,9 +99,10 @@ public final class AudioDownloader {
                     continue;
                 }
                 if (status == 401 || status == 403 || status == 404) {
-                    throw new MusicException("下载地址已失效，请重试以获取新地址");
+                    throw new MusicException(MusicException.Kind.NETWORK, "下载地址已失效，请重试以获取新地址");
                 }
-                if (status != 200) throw new MusicException("音频服务器返回错误（" + status + "），请重试");
+                if (status != 200) throw new MusicException(status >= 500 || status == 408 || status == 429
+                        ? MusicException.Kind.NETWORK : MusicException.Kind.UNKNOWN, "音频服务器返回错误（" + status + "），请重试");
                 var declared = response.headers().firstValueAsLong("Content-Length");
                 if (declared.isPresent() && declared.getAsLong() != authorization.bytes()) {
                     throw new MusicException("文件长度与下载信息不一致，请重试");
@@ -116,7 +126,7 @@ public final class AudioDownloader {
                     long completed = 0;
                     long lastUpdate = 0;
                     int length;
-                    while ((length = input.read(buffer)) != -1) {
+                    while ((length = read(input, buffer)) != -1) {
                         cancellation.check();
                         lastRead.set(System.nanoTime());
                         completed += length;
@@ -129,8 +139,8 @@ public final class AudioDownloader {
                         }
                     }
                     cancellation.check();
-                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试");
-                    if (completed != authorization.bytes()) throw new MusicException("音频下载不完整，请重试");
+                    if (stalled.get()) throw new MusicException(MusicException.Kind.NETWORK, "下载长时间没有进展，请检查网络后重试");
+                    if (completed != authorization.bytes()) throw new MusicException(MusicException.Kind.NETWORK, "音频下载不完整，请重试");
                     if (!authorization.md5().isBlank()
                             && !HexFormat.of().formatHex(digest.digest()).equalsIgnoreCase(authorization.md5())) {
                         throw new MusicException("文件校验未通过，请重试");
@@ -138,7 +148,7 @@ public final class AudioDownloader {
                     progress.update(completed, authorization.bytes());
                 } catch (IOException exception) {
                     cancellation.check();
-                    if (stalled.get()) throw new MusicException("下载长时间没有进展，请检查网络后重试");
+                    if (stalled.get()) throw new MusicException(MusicException.Kind.NETWORK, "下载长时间没有进展，请检查网络后重试");
                     throw exception;
                 } finally {
                     timeout.shutdownNow();
@@ -160,6 +170,11 @@ public final class AudioDownloader {
         return uri;
     }
 
+    private static int read(java.io.InputStream input, byte[] buffer) throws IOException {
+        try { return input.read(buffer); }
+        catch (IOException exception) { throw new MusicException(MusicException.Kind.NETWORK, "音频连接中断，请检查网络后重试"); }
+    }
+
     private static String format(byte[] header) {
         if (header.length >= 8 && new String(header, 0, 8, StandardCharsets.US_ASCII).equals("CTENFDAM")) return "ncm";
         if (header.length >= 4 && new String(header, 0, 4, StandardCharsets.US_ASCII).equals("fLaC")) return "flac";
@@ -171,11 +186,4 @@ public final class AudioDownloader {
         return null;
     }
 
-    private static String safeName(String name) {
-        var value = name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").strip().replaceAll("[. ]+$", "");
-        if (value.isBlank()) value = "audio";
-        if (value.matches("(?i)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])")) value = "_" + value;
-        int end = value.offsetByCodePoints(0, Math.min(value.codePointCount(0, value.length()), 90));
-        return value.substring(0, end);
-    }
 }

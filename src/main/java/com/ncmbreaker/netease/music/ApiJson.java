@@ -26,7 +26,7 @@ final class ApiJson {
     }
     static void success(JsonObject response) throws MusicException {
         long code = number(response, "code");
-        if (code == 301 || code == 302) throw new MusicException("登录状态已失效，请重新扫码登录");
+        if (code == 301 || code == 302) throw new MusicException(MusicException.Kind.AUTHORIZATION, "登录状态已失效，请重新扫码登录");
         if (code != 200) throw new MusicException("服务器暂时无法提供该内容（" + code + "）");
     }
 }

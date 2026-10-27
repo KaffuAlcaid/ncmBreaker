@@ -3,8 +3,22 @@ package com.ncmbreaker.netease.music;
 import java.io.IOException;
 
 public final class MusicException extends IOException {
+    public enum Kind { NETWORK, AUTHORIZATION, QUALITY, FORMAT, FILESYSTEM, UNKNOWN }
+    private final Kind kind;
     public MusicException(String message) {
-        super(message);
+        this(Kind.UNKNOWN, message);
+    }
+    public MusicException(Kind kind, String message) { super(message); this.kind = kind; }
+    public static Kind kind(Throwable error) {
+        while ((error instanceof java.util.concurrent.ExecutionException || error instanceof java.util.concurrent.CompletionException)
+                && error.getCause() != null) error = error.getCause();
+        if (error instanceof MusicException music) return music.kind;
+        if (error instanceof com.ncmbreaker.netease.http.NeteaseClient.NetworkException) return Kind.NETWORK;
+        if (error instanceof java.net.SocketException || error instanceof java.net.UnknownHostException
+                || error instanceof java.net.http.HttpTimeoutException || error instanceof java.util.concurrent.TimeoutException
+                || error instanceof javax.net.ssl.SSLException) return Kind.NETWORK;
+        if (error instanceof java.nio.file.FileSystemException || error instanceof SecurityException) return Kind.FILESYSTEM;
+        return Kind.UNKNOWN;
     }
 
     public static String describe(Throwable error) {
@@ -14,6 +28,9 @@ public final class MusicException extends IOException {
         }
         if (error instanceof MusicException) {
             return error.getMessage();
+        }
+        if (error instanceof com.ncmbreaker.netease.http.NeteaseClient.NetworkException && error.getCause() != null) {
+            return describe(error.getCause());
         }
         if (error instanceof java.net.http.HttpTimeoutException || error instanceof java.net.SocketTimeoutException
                 || error instanceof java.util.concurrent.TimeoutException) {

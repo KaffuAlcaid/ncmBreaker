@@ -31,6 +31,9 @@ import java.util.concurrent.TimeoutException;
 import java.util.zip.GZIPInputStream;
 
 public final class NeteaseClient implements AutoCloseable {
+    public static final class NetworkException extends IOException {
+        NetworkException(String message, Throwable cause) { super(message, cause); }
+    }
     @FunctionalInterface public interface SessionWriter { void save(SessionState state) throws IOException; }
     public enum Protocol { EAPI, WEAPI }
     public enum ClientProfile { DESKTOP, AUDIO_VIVID }
@@ -96,11 +99,16 @@ public final class NeteaseClient implements AutoCloseable {
             throw new IOException("无法创建登录请求", exception);
         }
         var request = requestBuilder.POST(HttpRequest.BodyPublishers.ofString(form)).build();
-        var response = http.send(request, HttpResponse.BodyHandlers.ofInputStream());
+        final HttpResponse<java.io.InputStream> response;
+        try { response = http.send(request, HttpResponse.BodyHandlers.ofInputStream()); }
+        catch (IOException exception) { throw new NetworkException("网络请求失败：" + exception.getMessage(), exception); }
         var status = response.statusCode();
         var responseHeaders = response.headers().map();
         JsonElement responseBody;
         try (var raw = response.body()) {
+            if (status >= 500 || status == 408 || status == 429) {
+                throw new NetworkException("服务器暂时不可用（HTTP " + status + "）", null);
+            }
             var bytes = readResponse(raw, response.headers().firstValue("Content-Encoding").orElse(""));
             try {
                 responseBody = JsonParser.parseString(new String(bytes, StandardCharsets.UTF_8));
@@ -137,7 +145,7 @@ public final class NeteaseClient implements AutoCloseable {
         } catch (TimeoutException exception) {
             throw new HttpTimeoutException("读取服务器响应超时");
         } catch (ExecutionException exception) {
-            if (exception.getCause() instanceof IOException failure) throw failure;
+            if (exception.getCause() instanceof IOException failure) throw new NetworkException("读取服务器响应失败", failure);
             throw new IOException("服务器返回的数据无法读取", exception.getCause());
         } finally {
             future.cancel(true);

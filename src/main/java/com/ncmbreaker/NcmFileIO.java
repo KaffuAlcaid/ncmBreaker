@@ -97,6 +97,49 @@ public final class NcmFileIO {
         void onProgress(long completedBytes, long totalBytes);
     }
 
+    public record DecodedAudio(Path file, String format, long audioBytes, byte[] cover) implements AutoCloseable {
+        @Override public void close() throws IOException { Files.deleteIfExists(file); }
+    }
+
+    public byte[] coverData(Path source) throws IOException {
+        try (var file = new RandomAccessFile(normalize(source).toFile(), "r")) {
+            return readCover(file, parse(file));
+        } catch (NcmContainerException exception) { throw new IOException(exception.getMessage(), exception); }
+    }
+
+    public DecodedAudio decodeAudio(Path source, Path temporaryDirectory, boolean includeCover,
+                                    ProgressListener progress) throws IOException {
+        Files.createDirectories(temporaryDirectory);
+        Path temporary = null;
+        try (var file = new RandomAccessFile(normalize(source).toFile(), "r")) {
+            var parsed = parse(file);
+            var format = decoder.detectAudioFormat(readDecryptedAudioHeader(file, parsed));
+            if ("unknown".equals(format)) throw new IOException("不支持的音频负载格式");
+            var cover = includeCover ? readCover(file, parsed) : new byte[0];
+            temporary = Files.createTempFile(temporaryDirectory, ".ncm-breaker-", ".part");
+            var cipher = decoder.newAudioCipher(parsed.streamKey());
+            var buffer = new byte[BUFFER_SIZE];
+            long completed = 0;
+            file.seek(parsed.audioOffset());
+            progress.onProgress(0, parsed.audioSize());
+            try (var output = new BufferedOutputStream(Files.newOutputStream(temporary))) {
+                int read;
+                while ((read = file.read(buffer)) != -1) {
+                    if (Thread.currentThread().isInterrupted()) throw new CancellationException("转换已取消");
+                    cipher.apply(buffer, read, completed);
+                    output.write(buffer, 0, read);
+                    completed += read;
+                    progress.onProgress(completed, parsed.audioSize());
+                }
+            }
+            if (completed != parsed.audioSize()) throw new EOFException("音频数据长度与容器记录不一致");
+            var result = new DecodedAudio(temporary, format, completed, cover);
+            temporary = null;
+            return result;
+        } catch (NcmContainerException exception) { throw new IOException(exception.getMessage(), exception); }
+        finally { if (temporary != null) Files.deleteIfExists(temporary); }
+    }
+
     public Set<Path> collectNcmFiles(List<Path> inputs) throws IOException {
         var result = new LinkedHashSet<Path>();
         for (var input : inputs) {

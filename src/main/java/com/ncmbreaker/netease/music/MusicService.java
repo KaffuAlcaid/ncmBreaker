@@ -5,6 +5,8 @@ import com.google.gson.JsonObject;
 import com.ncmbreaker.netease.auth.LoginSession;
 import com.ncmbreaker.netease.http.NeteaseClient;
 import com.ncmbreaker.netease.music.MusicModels.*;
+import com.ncmbreaker.audio.TrackMetadata;
+import com.ncmbreaker.audio.Lyrics;
 import java.io.IOException;
 import java.net.URI;
 import java.util.ArrayList;
@@ -17,6 +19,25 @@ public final class MusicService {
     private final LoginSession session;
 
     public MusicService(LoginSession session) { this.session = session; }
+
+    public List<String> suggestions(String keywords, SearchType type) throws IOException, InterruptedException {
+        if (keywords.isBlank()) return List.of();
+        var parameters = new JsonObject(); parameters.addProperty("s", keywords.strip());
+        parameters.addProperty("limit", 8);
+        var response = post("/api/search/suggest/web", parameters, NeteaseClient.Protocol.WEAPI);
+        var result = object(response, "result");
+        var values = new java.util.LinkedHashSet<String>();
+        var key = switch (type) { case SONG -> "songs"; case ALBUM -> "albums"; case PLAYLIST -> "playlists"; };
+        for (var value : array(result, key)) {
+            if (!value.isJsonObject()) continue;
+            var item = value.getAsJsonObject(); var name = text(item, "name");
+            if (!name.isBlank()) values.add(name);
+        }
+        if (type == SearchType.SONG) for (var value : array(result, "artists")) {
+            if (value.isJsonObject() && !text(value.getAsJsonObject(), "name").isBlank()) values.add(text(value.getAsJsonObject(), "name"));
+        }
+        return values.stream().limit(8).toList();
+    }
 
     public SearchResult search(String keywords, SearchType type, int offset) throws IOException, InterruptedException {
         var query = keywords.strip();
@@ -184,8 +205,75 @@ public final class MusicService {
         return List.copyOf(options);
     }
 
+    public TrackMetadata songMetadata(long songId) throws IOException, InterruptedException {
+        var item = new JsonObject();
+        item.addProperty("id", songId);
+        var items = new JsonArray();
+        items.add(item);
+        var request = new JsonObject();
+        request.addProperty("c", items.toString());
+        var response = post("/api/v3/song/detail", request, NeteaseClient.Protocol.WEAPI);
+        for (var value : array(response, "songs")) {
+            if (value.isJsonObject() && number(value.getAsJsonObject(), "id") == songId) {
+                return TrackMetadata.fromSongJson(value.getAsJsonObject());
+            }
+        }
+        throw new MusicException("未取得对应歌曲的详细资料");
+    }
+
+    public java.util.Map<Long, TrackMetadata> songMetadata(List<Long> ids) throws IOException, InterruptedException {
+        var result = new LinkedHashMap<Long, TrackMetadata>();
+        for (int start = 0; start < ids.size(); start += 200) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+            var query = new JsonArray();
+            for (long id : ids.subList(start, Math.min(start + 200, ids.size()))) {
+                var item = new JsonObject(); item.addProperty("id", id); query.add(item);
+            }
+            var request = new JsonObject(); request.addProperty("c", query.toString());
+            var response = post("/api/v3/song/detail", request, NeteaseClient.Protocol.WEAPI);
+            for (var value : array(response, "songs")) {
+                if (value.isJsonObject() && number(value.getAsJsonObject(), "id") > 0) {
+                    var metadata = TrackMetadata.fromSongJson(value.getAsJsonObject()); result.put(metadata.songId(), metadata);
+                }
+            }
+        }
+        return java.util.Map.copyOf(result);
+    }
+
+    public java.util.Map<Long, TrackMetadata> albumMetadata(long albumId) throws IOException, InterruptedException {
+        var response = post("/api/v1/album/" + albumId, new JsonObject(), NeteaseClient.Protocol.WEAPI);
+        var album = object(response, "album");
+        if (number(album, "id") != albumId) throw new MusicException("未取得对应专辑的详细资料");
+        var artists = TrackMetadata.artistNames(album.get("artists"));
+        if (artists.isEmpty()) artists = TrackMetadata.artistNames(album.get("artist"));
+        var common = new TrackMetadata(0, "", List.of(), albumId, text(album, "name"), artists,
+                0, 0, TrackMetadata.year(album), text(album, "picUrl"), 0);
+        var result = new LinkedHashMap<Long, TrackMetadata>();
+        result.put(0L, common);
+        for (var item : array(response, "songs")) {
+            if (item.isJsonObject() && number(item.getAsJsonObject(), "id") > 0) {
+                var song = TrackMetadata.fromSongJson(item.getAsJsonObject()).fillMissing(common);
+                result.put(song.songId(), song);
+            }
+        }
+        return java.util.Map.copyOf(result);
+    }
+
+    public Lyrics lyrics(long songId) throws IOException, InterruptedException {
+        var request = new JsonObject();
+        request.addProperty("id", songId);
+        for (var key : List.of("tv", "lv", "rv", "kv")) request.addProperty(key, -1);
+        request.addProperty("_nmclfl", 1);
+        var response = post("/api/song/lyric", request, NeteaseClient.Protocol.EAPI);
+        var original = text(object(response, "lrc"), "lyric");
+        var state = bool(response, "nolyric") ? Lyrics.State.INSTRUMENTAL
+                : original.isBlank() ? Lyrics.State.UNAVAILABLE : Lyrics.State.AVAILABLE;
+        return new Lyrics(state, original, text(object(response, "tlyric"), "lyric"),
+                text(object(response, "romalrc"), "lyric"));
+    }
+
     public AuthorizedDownload authorize(long id, AudioQuality quality) throws IOException, InterruptedException {
-        if (session.account() == null) throw new MusicException("请先登录网易云账号");
+        if (session.account() == null) throw new MusicException(MusicException.Kind.AUTHORIZATION, "请先登录网易云账号");
         var request = new JsonObject();
         request.addProperty("id", id);
         request.addProperty("level", quality.level());
@@ -197,11 +285,11 @@ public final class MusicService {
         success(response);
         var data = object(response, "data");
         if (number(data, "id") != id || number(data, "code") != 200 || text(data, "url").isBlank()) {
-            throw new MusicException("当前账号无法下载这首歌的所选音质");
+            throw new MusicException(MusicException.Kind.AUTHORIZATION, "当前账号无法下载这首歌的所选音质");
         }
         for (var key : List.of("freeTrialInfo", "trialInfo")) {
             if (data.has(key) && !data.get(key).isJsonNull()) {
-                throw new MusicException("服务器只提供试听内容，请选择其他音质或检查账号权限");
+                throw new MusicException(MusicException.Kind.AUTHORIZATION, "服务器只提供试听内容，请选择其他音质或检查账号权限");
             }
         }
         var actual = AudioQuality.fromLevel(text(data, "level"));

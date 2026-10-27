@@ -6,6 +6,9 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.ncmbreaker.NcmFileIO;
 import com.ncmbreaker.netease.music.AudioQuality;
+import com.ncmbreaker.netease.music.MusicModels.SearchType;
+import com.ncmbreaker.audio.ProcessingOptions;
+import com.ncmbreaker.audio.OutputPlanner;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -40,8 +43,28 @@ public final class AppSettingsStore implements AutoCloseable {
     private volatile Consumer<String> errorHandler = message -> { };
     private NcmFileIO.ConflictPolicy conflictPolicy = NcmFileIO.ConflictPolicy.RENAME;
     private AudioQuality batchQuality = AudioQuality.LOSSLESS;
+    private ProcessingOptions downloadProcessing;
+    private ProcessingOptions conversionProcessing;
     private String loadWarning;
     private boolean closed;
+    public record SearchEntry(SearchType type, String query) { }
+    private final java.util.List<SearchEntry> searchHistory = new java.util.ArrayList<>();
+
+    public synchronized java.util.List<String> searchHistory(SearchType type) {
+        return searchHistory.stream().filter(entry -> entry.type() == type).map(SearchEntry::query).toList();
+    }
+
+    public synchronized void rememberSearch(SearchType type, String query) {
+        if (closed || query.isBlank() || query.length() > 160) return;
+        var entry = new SearchEntry(type, query.strip());
+        searchHistory.remove(entry); searchHistory.add(0, entry);
+        while (searchHistory.size() > 30) searchHistory.remove(searchHistory.size() - 1);
+        save();
+    }
+
+    public synchronized void clearSearchHistory(SearchType type) {
+        if (!closed && searchHistory.removeIf(entry -> entry.type() == type)) save();
+    }
 
     public AppSettingsStore() { this(ApplicationPaths.directory().resolve("config")); }
 
@@ -62,6 +85,30 @@ public final class AppSettingsStore implements AutoCloseable {
     public synchronized boolean option(Option key) { return options.getOrDefault(key, key.defaultValue); }
     public synchronized NcmFileIO.ConflictPolicy conflictPolicy() { return conflictPolicy; }
     public synchronized AudioQuality batchQuality() { return batchQuality; }
+
+    public synchronized ProcessingOptions processing(boolean conversion) {
+        var value = conversion ? conversionProcessing : downloadProcessing;
+        if (value != null) return new ProcessingOptions(option(conversion ? Option.CONVERSION_TAGS : Option.DOWNLOAD_TAGS),
+                option(conversion ? Option.CONVERSION_COVER : Option.DOWNLOAD_COVER), value.enrich(), value.replaceExisting(),
+                value.saveLyrics(), value.embedLyrics(), value.translation(), value.romanization(), value.exportCover(),
+                value.albumCover(), value.playlist(), value.layout(), value.template(),
+                conversion ? conflictPolicy : value.conflictPolicy());
+        var defaults = ProcessingOptions.defaults();
+        return new ProcessingOptions(option(conversion ? Option.CONVERSION_TAGS : Option.DOWNLOAD_TAGS),
+                option(conversion ? Option.CONVERSION_COVER : Option.DOWNLOAD_COVER), false, false, false, false,
+                false, false, false, false, false,
+                !conversion && option(Option.PLAYLIST_DIRECTORIES) ? ProcessingOptions.Layout.PLAYLIST : ProcessingOptions.Layout.CURRENT,
+                defaults.template(), conversion ? conflictPolicy : defaults.conflictPolicy());
+    }
+
+    public synchronized void setProcessing(boolean conversion, ProcessingOptions value) {
+        if (closed) return;
+        if (conversion) { conversionProcessing = value; conflictPolicy = value.conflictPolicy(); }
+        else { downloadProcessing = value; options.put(Option.PLAYLIST_DIRECTORIES, value.layout() == ProcessingOptions.Layout.PLAYLIST); }
+        options.put(conversion ? Option.CONVERSION_TAGS : Option.DOWNLOAD_TAGS, value.tags());
+        options.put(conversion ? Option.CONVERSION_COVER : Option.DOWNLOAD_COVER, value.cover());
+        save();
+    }
 
     public synchronized void setDirectory(Directory key, Path value) {
         if (closed) return;
@@ -134,12 +181,33 @@ public final class AppSettingsStore implements AutoCloseable {
                 try { batchQuality = AudioQuality.valueOf(data.get("batchQuality").getAsString()); }
                 catch (RuntimeException exception) { invalidField(); }
             }
+            downloadProcessing = readProcessing(data, "downloadProcessing");
+            conversionProcessing = readProcessing(data, "conversionProcessing");
+            if (data.has("searchHistory")) {
+                try {
+                    for (var item : data.getAsJsonArray("searchHistory")) {
+                        var entry = JSON.fromJson(item, SearchEntry.class);
+                        if (entry != null && entry.type() != null && entry.query() != null
+                                && !entry.query().isBlank() && entry.query().length() <= 160 && searchHistory.size() < 30) searchHistory.add(entry);
+                    }
+                } catch (RuntimeException exception) { invalidField(); }
+            }
         } catch (IOException | RuntimeException exception) {
             loadWarning = "设置文件无法读取，已使用默认设置";
         }
     }
 
     private void invalidField() { loadWarning = "部分设置无效，已使用对应的默认设置"; }
+
+    private ProcessingOptions readProcessing(JsonObject data, String key) {
+        if (!data.has(key)) return null;
+        try {
+            var value = JSON.fromJson(data.get(key), ProcessingOptions.class);
+            if (value == null) throw new IllegalArgumentException();
+            OutputPlanner.validate(value);
+            return value;
+        } catch (RuntimeException exception) { invalidField(); return null; }
+    }
 
     private void save() {
         var data = new JsonObject();
@@ -148,6 +216,9 @@ public final class AppSettingsStore implements AutoCloseable {
         options.forEach((key, value) -> data.addProperty(key.name(), value));
         data.addProperty("conflictPolicy", conflictPolicy.name());
         data.addProperty("batchQuality", batchQuality.name());
+        data.add("searchHistory", JSON.toJsonTree(searchHistory));
+        if (downloadProcessing != null) data.add("downloadProcessing", JSON.toJsonTree(downloadProcessing));
+        if (conversionProcessing != null) data.add("conversionProcessing", JSON.toJsonTree(conversionProcessing));
         var snapshot = JSON.toJson(data) + "\n";
         writer.execute(() -> {
             try {

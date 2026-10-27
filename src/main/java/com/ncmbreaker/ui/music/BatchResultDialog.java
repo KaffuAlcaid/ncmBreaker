@@ -1,15 +1,17 @@
 package com.ncmbreaker.ui.music;
 
+import com.ncmbreaker.download.DownloadManager;
+
 import com.ncmbreaker.ui.UiStyle;
 import javax.swing.*;
 import java.awt.*;
 import java.util.stream.Collectors;
-import static com.ncmbreaker.ui.music.DownloadQueue.State.*;
+import static com.ncmbreaker.download.DownloadManager.State.*;
 
 final class BatchResultDialog extends JDialog {
     private boolean showFailures;
 
-    BatchResultDialog(Window owner, DownloadQueue.BatchResult result) {
+    BatchResultDialog(Window owner, DownloadManager.BatchResult result) {
         super(owner, "批量下载结果", ModalityType.APPLICATION_MODAL);
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         var root = new JPanel(new BorderLayout(0, 16));
@@ -22,6 +24,12 @@ final class BatchResultDialog extends JDialog {
         var summary = new StringBuilder("完成 " + result.count(SUCCEEDED) + " 首，失败 " + failed + " 首");
         long cancelled = result.count(CANCELLED);
         if (cancelled > 0) summary.append("，取消 ").append(cancelled).append(" 首");
+        if (result.count(SKIPPED) > 0) summary.append("，跳过已有文件 ").append(result.count(SKIPPED)).append(" 首");
+        if (result.reused() > 0) summary.append("，使用已有文件 ").append(result.reused()).append(" 首");
+        if (result.playlistFile() != null) summary.append("\nM3U8：").append(result.playlistFile());
+        if (!result.playlistWarning().isBlank()) summary.append("\n").append(result.playlistWarning());
+        long warnings = result.tasks().stream().filter(task -> task.output() != null && !task.output().warnings().isEmpty()).count();
+        if (warnings > 0) summary.append("\n").append(warnings).append(" 首存在附加内容提示，可在下载任务中查看");
         if (result.skipped() > 0) summary.append("\n另有 ").append(result.skipped()).append(" 首已在下载队列，未重复加入");
         int unread = result.source().expectedCount() - result.source().songs().size();
         if (unread > 0) summary.append("\n原")

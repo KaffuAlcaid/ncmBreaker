@@ -7,6 +7,15 @@ import com.ncmbreaker.ui.support.StarInvitation;
 import com.ncmbreaker.app.AppSettingsStore;
 import com.ncmbreaker.app.AppSettingsStore.Directory;
 import com.ncmbreaker.app.AppSettingsStore.Option;
+import com.ncmbreaker.audio.AudioProcessingService;
+import com.ncmbreaker.audio.AudioResult;
+import com.ncmbreaker.audio.OutputPlanner;
+import com.ncmbreaker.audio.ProcessingOptions;
+import com.ncmbreaker.audio.TrackMetadata;
+import com.ncmbreaker.download.DownloadCancellation;
+import com.ncmbreaker.netease.auth.LoginSession;
+import com.ncmbreaker.ui.ConversionOptionsDialog;
+import com.ncmbreaker.ui.ProcessingOptionsPanel;
 import javax.swing.BorderFactory;
 import javax.swing.AbstractButton;
 import javax.swing.ImageIcon;
@@ -75,6 +84,8 @@ public final class MainWindow extends JFrame {
     private final JButton browseOutputButton = button("选择");
     private final JButton cancelButton = button("取消");
     private final JButton startButton = primaryButton("开始转换");
+    private final JButton selectionButton = button("选择文件");
+    private final JButton exportCoverButton = button("导出封面");
     private final JTextField outputField = new JTextField(settings.directory(Directory.CONVERSION_OUTPUT, Path.of(defaultOutputPath())).toString());
     private final JCheckBox tagsCheckBox = new JCheckBox("写入基础标签", settings.option(Option.CONVERSION_TAGS));
     private final JCheckBox coverCheckBox = new JCheckBox("嵌入专辑封面", settings.option(Option.CONVERSION_COVER));
@@ -90,6 +101,7 @@ public final class MainWindow extends JFrame {
     private SwingWorker<?, ?> scanWorker;
     private ConversionWorker conversionWorker;
     private boolean closing;
+    private LoginSession currentSession;
 
     public MainWindow() {
         super("NCM Breaker");
@@ -100,7 +112,7 @@ public final class MainWindow extends JFrame {
         }
         musicPanel.setLoginAction(this::showAccountPage);
         musicPanel.setTaskSuccessListener(starInvitation::taskSucceeded);
-        accountMenu.setSessionListener(musicPanel::setSession);
+        accountMenu.setSessionListener(session -> { currentSession = session; musicPanel.setSession(session); });
         configureWindow();
         buildLayout();
         bindActions();
@@ -217,6 +229,27 @@ public final class MainWindow extends JFrame {
         var left = transparentFlow(FlowLayout.LEFT, 7);
         left.add(addFilesButton);
         left.add(addFolderButton);
+        var selections = new javax.swing.JPopupMenu();
+        for (var label : new String[]{"选择全部可转换文件", "只选择失败文件", "只选择未完成文件", "取消已完成文件的选择", "取消全部选择"}) {
+            var item = new javax.swing.JMenuItem(label);
+            item.addActionListener(event -> {
+                if (busy()) return;
+                for (var entry : tableModel.entries()) {
+                    if (!entry.inspection.convertible()) continue;
+                    entry.selected = switch (label) {
+                        case "选择全部可转换文件" -> true;
+                        case "只选择失败文件" -> entry.state == RowState.FAILED;
+                        case "只选择未完成文件" -> entry.state != RowState.DONE && entry.state != RowState.SKIPPED;
+                        case "取消已完成文件的选择" -> entry.selected && entry.state != RowState.DONE && entry.state != RowState.SKIPPED;
+                        default -> false;
+                    };
+                }
+                tableModel.refresh(); updateControls();
+            });
+            selections.add(item);
+        }
+        selectionButton.addActionListener(event -> selections.show(selectionButton, 0, selectionButton.getHeight()));
+        left.add(selectionButton);
         toolbar.add(left, BorderLayout.WEST);
 
         var right = transparentFlow(FlowLayout.RIGHT, 7);
@@ -286,6 +319,7 @@ public final class MainWindow extends JFrame {
         footer.add(progressPanel, BorderLayout.CENTER);
 
         var actions = transparentFlow(FlowLayout.RIGHT, 7);
+        actions.add(exportCoverButton);
         actions.add(cancelButton);
         actions.add(startButton);
         footer.add(actions, BorderLayout.EAST);
@@ -344,6 +378,7 @@ public final class MainWindow extends JFrame {
         removeButton.addActionListener(event -> removeSelected());
         clearButton.addActionListener(event -> clearEntries());
         startButton.addActionListener(event -> startConversion());
+        exportCoverButton.addActionListener(event -> exportCovers());
         cancelButton.addActionListener(event -> cancelConversion());
         outputField.getDocument().addDocumentListener((SimpleDocumentListener) this::updateControls);
         outputField.addActionListener(event -> rememberOutputDirectory());
@@ -407,13 +442,18 @@ public final class MainWindow extends JFrame {
             @Override
             protected Void doInBackground() throws Exception {
                 var files = fileIO.collectNcmFiles(roots);
+                var inputRoots = roots.stream().map(path -> path.toAbsolutePath().normalize())
+                        .map(path -> java.nio.file.Files.isDirectory(path) ? path : path.getParent())
+                        .filter(java.util.Objects::nonNull).distinct()
+                        .sorted(java.util.Comparator.comparingInt(Path::getNameCount).reversed()).toList();
                 found = files.size();
                 for (var path : files) {
                     if (isCancelled()) {
                         break;
                     }
                     var inspection = fileIO.inspect(path);
-                    publish(new FileEntry(path, inspection));
+                    var inputRoot = inputRoots.stream().filter(path::startsWith).findFirst().orElse(path.getParent());
+                    publish(new FileEntry(path, inspection, inputRoot));
                 }
                 return null;
             }
@@ -523,15 +563,31 @@ public final class MainWindow extends JFrame {
             return;
         }
 
-        var choice = (ConflictChoice) conflictBox.getSelectedItem();
-        var options = new NcmFileIO.DecodeOptions(
-                tagsCheckBox.isSelected(),
-                coverCheckBox.isSelected(),
-                choice == null ? NcmFileIO.ConflictPolicy.RENAME : choice.policy
-        );
+        var previews = new ArrayList<ProcessingOptionsPanel.PreviewItem>();
+        for (int index = 0; index < selected.size(); index++) {
+            var entry = selected.get(index);
+            previews.add(new ProcessingOptionsPanel.PreviewItem(TrackMetadata.fromNcm(entry.inspection.metadata()),
+                    entry.source, entry.inputRoot, entry.inspection.audioFormat(), index + 1));
+        }
+        var dialog = new ConversionOptionsDialog(this, settings.processing(true), outputDirectory, previews,
+                currentSession,
+                selected.stream().mapToLong(entry -> entry.inspection.audioSize()).sum(),
+                selected.stream().mapToLong(entry -> entry.inspection.audioSize()).max().orElse(0));
+        dialog.setVisible(true);
+        var selection = dialog.selection();
+        if (selection == null || closing) return;
+        var options = selection.options();
+        settings.setProcessing(true, options);
+        outputField.setText(selection.directory().toString());
+        settings.setDirectory(Directory.CONVERSION_OUTPUT, selection.directory());
+        tagsCheckBox.setSelected(options.tags()); coverCheckBox.setSelected(options.cover());
+        for (var choice : ConflictChoice.values()) if (choice.policy == options.conflictPolicy()) conflictBox.setSelectedItem(choice);
         selected.forEach(entry -> entry.update(RowState.QUEUED, 0, "等待转换", null));
         tableModel.refresh();
-        conversionWorker = new ConversionWorker(selected, outputDirectory, options);
+        conversionWorker = new ConversionWorker(selected, selection.directory(), options);
+        conversionWorker.processing = selection.processing();
+        conversionWorker.metadata = selection.files().stream().collect(java.util.stream.Collectors.toMap(
+                ProcessingOptionsPanel.PreviewItem::source, ProcessingOptionsPanel.PreviewItem::metadata));
         conversionWorker.execute();
         updateControls();
     }
@@ -541,6 +597,24 @@ public final class MainWindow extends JFrame {
             conversionWorker.requestCancellation();
             cancelButton.setEnabled(false);
         }
+    }
+
+    private void exportCovers() {
+        var selected = tableModel.convertibleSelected();
+        if (selected.isEmpty()) return;
+        Path directory;
+        try { directory = Path.of(outputField.getText().strip()).toAbsolutePath().normalize(); }
+        catch (RuntimeException exception) {
+            JOptionPane.showMessageDialog(this, "请选择有效的保存目录", "导出封面", JOptionPane.WARNING_MESSAGE); return;
+        }
+        var chooser = new JFileChooser(AppSettingsStore.existingDirectory(directory));
+        chooser.setDialogTitle("选择封面保存目录"); chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        if (chooser.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        directory = chooser.getSelectedFile().toPath().toAbsolutePath().normalize();
+        selected.forEach(entry -> entry.update(RowState.QUEUED, 0, "等待导出封面", null));
+        conversionWorker = new ConversionWorker(selected, directory, settings.processing(true));
+        conversionWorker.coversOnly = true;
+        conversionWorker.execute(); tableModel.refresh(); updateControls();
     }
 
     private void closeWindow() {
@@ -568,12 +642,14 @@ public final class MainWindow extends JFrame {
         addFolderButton.setEnabled(!busy);
         removeButton.setEnabled(!busy && tableModel.hasSelected());
         clearButton.setEnabled(!busy && hasRows);
+        selectionButton.setEnabled(!busy && hasRows);
         outputField.setEnabled(!busy);
         browseOutputButton.setEnabled(!busy);
         tagsCheckBox.setEnabled(!busy);
         coverCheckBox.setEnabled(!busy);
         conflictBox.setEnabled(!busy);
         startButton.setEnabled(!busy && hasSelected && !outputField.getText().isBlank());
+        exportCoverButton.setEnabled(!busy && hasSelected);
         cancelButton.setEnabled(conversionWorker != null && !conversionWorker.isDone());
         updateSummary();
     }
@@ -773,15 +849,17 @@ public final class MainWindow extends JFrame {
     private final class FileEntry {
         private final Path source;
         private final NcmFileIO.Inspection inspection;
+        private final Path inputRoot;
         private boolean selected;
         private RowState state;
         private int progress;
         private String message;
         private Path output;
 
-        private FileEntry(Path source, NcmFileIO.Inspection inspection) {
+        private FileEntry(Path source, NcmFileIO.Inspection inspection, Path inputRoot) {
             this.source = source;
             this.inspection = inspection;
+            this.inputRoot = inputRoot;
             selected = inspection.convertible();
             state = inspection.convertible() ? RowState.READY : RowState.UNSUPPORTED;
             message = inspection.detail();
@@ -964,7 +1042,14 @@ public final class MainWindow extends JFrame {
     private final class ConversionWorker extends SwingWorker<Void, ProgressUpdate> {
         private final List<FileEntry> entries;
         private final Path outputDirectory;
-        private final NcmFileIO.DecodeOptions options;
+        private final ProcessingOptions options;
+        private final DownloadCancellation cancellation = new DownloadCancellation();
+        private AudioProcessingService processing = new AudioProcessingService(currentSession);
+        private java.util.Map<Path, TrackMetadata> metadata = java.util.Map.of();
+        private final List<AudioResult> outputs = new ArrayList<>();
+        private Path playlistFile;
+        private String playlistWarning;
+        private boolean coversOnly;
         private volatile boolean cancellationRequested;
         private volatile Thread workerThread;
         private boolean succeeded;
@@ -972,7 +1057,7 @@ public final class MainWindow extends JFrame {
         private ConversionWorker(
                 List<FileEntry> entries,
                 Path outputDirectory,
-                NcmFileIO.DecodeOptions options
+                ProcessingOptions options
         ) {
             this.entries = List.copyOf(entries);
             this.outputDirectory = outputDirectory;
@@ -983,14 +1068,17 @@ public final class MainWindow extends JFrame {
         protected Void doInBackground() {
             workerThread = Thread.currentThread();
             try {
-                for (var entry : entries) {
+                for (int index = 0; index < entries.size(); index++) {
+                    var entry = entries.get(index);
                     if (cancellationRequested) {
                         break;
                     }
-                    publish(new ProgressUpdate(entry, RowState.CONVERTING, 0, "正在转换", null));
+                    publish(new ProgressUpdate(entry, RowState.CONVERTING, 0, coversOnly ? "正在导出封面" : "正在转换", null));
                     var lastProgress = new int[]{-1};
                     try {
-                        var result = fileIO.decode(entry.source, outputDirectory, options, (completed, total) -> {
+                        var context = new OutputPlanner.Context(outputDirectory, "本地转换", index + 1, entry.source, entry.inputRoot);
+                        var result = coversOnly ? processing.exportCover(entry.source, context, options, cancellation)
+                                : processing.convert(entry.source, context, options, cancellation, (completed, total) -> {
                             if (cancellationRequested) {
                                 Thread.currentThread().interrupt();
                             }
@@ -999,15 +1087,14 @@ public final class MainWindow extends JFrame {
                                 lastProgress[0] = percent;
                                 publish(new ProgressUpdate(entry, RowState.CONVERTING, percent, "正在转换", null));
                             }
-                        });
-                        if (result.outcome() == NcmFileIO.DecodeOutcome.SKIPPED) {
-                            publish(new ProgressUpdate(entry, RowState.SKIPPED, 100, "目标文件已存在", result.output()));
+                        }, metadata.get(entry.source));
+                        outputs.add(result);
+                        if (result.outcome() == AudioResult.Outcome.SKIPPED) {
+                            publish(new ProgressUpdate(entry, RowState.SKIPPED, 100, "目标文件已存在", result.file()));
                         } else {
                             succeeded = true;
-                            var message = "flac".equals(result.audioFormat()) && (options.writeBasicTags() || options.embedCover())
-                                    ? "已完成，FLAC 标签保持原样"
-                                    : "已完成";
-                            publish(new ProgressUpdate(entry, RowState.DONE, 100, message, result.output()));
+                            var message = result.warningText().isBlank() ? "已完成" : "已完成；" + result.warningText();
+                            publish(new ProgressUpdate(entry, RowState.DONE, 100, message, result.file()));
                         }
                     } catch (CancellationException exception) {
                         publish(new ProgressUpdate(entry, RowState.CANCELLED, entry.progress, "已取消", null));
@@ -1015,6 +1102,10 @@ public final class MainWindow extends JFrame {
                     } catch (Exception exception) {
                         publish(new ProgressUpdate(entry, RowState.FAILED, entry.progress, exception.getMessage(), null));
                     }
+                }
+                if (options.playlist() && !cancellationRequested && !coversOnly) {
+                    try { playlistFile = OutputPlanner.writePlaylist(outputDirectory, "本地转换", outputs, options.conflictPolicy()); }
+                    catch (Exception exception) { playlistWarning = "M3U8 未保存：" + exception.getMessage(); }
                 }
                 return null;
             } finally {
@@ -1024,6 +1115,7 @@ public final class MainWindow extends JFrame {
 
         private void requestCancellation() {
             cancellationRequested = true;
+            cancellation.cancel();
             var thread = workerThread;
             if (thread != null) {
                 thread.interrupt();
@@ -1048,6 +1140,8 @@ public final class MainWindow extends JFrame {
             conversionWorker = null;
             tableModel.refresh();
             updateControls();
+            if (playlistFile != null) { summaryLabel.setText(summaryLabel.getText() + "；M3U8 已保存"); summaryLabel.setToolTipText(playlistFile.toString()); }
+            if (playlistWarning != null) { summaryLabel.setText(summaryLabel.getText() + "；M3U8 未保存"); summaryLabel.setToolTipText(playlistWarning); }
             if (closing) {
                 dispose();
             } else if (!cancellationRequested && succeeded) {

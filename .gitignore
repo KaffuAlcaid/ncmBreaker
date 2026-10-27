@@ -12,7 +12,12 @@
 **/config/star-invitation.json
 **/config/settings.json
 **/config/settings-*.tmp
+**/config/tasks/
 .ncm-breaker-playlist-*.tmp
+.ncm-breaker-*.part
+.ncm-breaker-*.tmp
+.ncm-breaker-tags-*
+.ncm-breaker-cover-*
 
 /Java/
 

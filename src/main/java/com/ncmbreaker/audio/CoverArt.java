@@ -16,6 +16,15 @@ public final class CoverArt {
             .followRedirects(HttpClient.Redirect.NEVER).build();
     private CoverArt() { }
 
+    public static String extension(byte[] bytes) {
+        if (bytes.length >= 3 && (bytes[0] & 255) == 255 && (bytes[1] & 255) == 216 && (bytes[2] & 255) == 255) return ".jpg";
+        if (bytes.length >= 8 && (bytes[0] & 255) == 137 && bytes[1] == 'P' && bytes[2] == 'N' && bytes[3] == 'G') return ".png";
+        if (bytes.length >= 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F') return ".gif";
+        if (bytes.length >= 2 && bytes[0] == 'B' && bytes[1] == 'M') return ".bmp";
+        if (bytes.length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P') return ".webp";
+        return "";
+    }
+
     public static byte[] load(String url, DownloadCancellation cancellation) throws Exception {
         cancellation.check();
         if (url.isBlank()) return new byte[0];
