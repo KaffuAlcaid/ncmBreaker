@@ -315,13 +315,15 @@ public final class NcmFileIO {
             throw unsupported(exception.getMessage(), exception);
         }
 
-        ensureRemaining(file, 13, "CRC、保留区和封面长度");
-        file.seek(file.getFilePointer() + 9);
+        ensureRemaining(file, 13, "CRC、图片版本和封面长度字段");
+        file.seek(file.getFilePointer() + 5);
+        var coverFrameSize = readUnsignedIntLittleEndian(file);
         var coverSize = readUnsignedIntLittleEndian(file);
-        ensureRemaining(file, coverSize, "封面区");
+        coverFrameSize = Math.max(coverFrameSize, coverSize);
+        ensureRemaining(file, coverFrameSize, "封面帧");
         var coverOffset = file.getFilePointer();
         var coverFormat = inspectCoverFormat(file, coverOffset, coverSize);
-        var audioOffset = Math.addExact(coverOffset, coverSize);
+        var audioOffset = Math.addExact(coverOffset, coverFrameSize);
         var audioSize = file.length() - audioOffset;
         if (audioSize <= 0) {
             throw damaged("容器中没有音频数据");
