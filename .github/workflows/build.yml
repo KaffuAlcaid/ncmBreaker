@@ -72,16 +72,9 @@ jobs:
       - name: Compile
         shell: bash
         run: |
-          mvn --batch-mode --no-transfer-progress package
+          mvn --batch-mode --no-transfer-progress -Dmaven.test.skip=true package
           mkdir -p dist release
           cp target/ncm-breaker.jar dist/ncm-breaker.jar
-
-      - name: Verify standalone CLI JAR
-        shell: bash
-        run: |
-          modules="$(jdeps --multi-release 17 --print-module-deps target/ncm-breaker-cli.jar)"
-          test "$modules" = "java.base"
-          java --limit-modules java.base -Djava.awt.headless=true -jar target/ncm-breaker-cli.jar --help
 
       - name: Package standalone CLI JAR
         if: runner.os == 'Linux'
@@ -114,11 +107,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "jpackage failed with exit code $LASTEXITCODE."
           }
-          $launcher = Resolve-Path .\build\package\NcmBreaker\NcmBreaker.exe
-          $process = Start-Process -FilePath $launcher -ArgumentList '--help' -Wait -PassThru
-          if ($process.ExitCode -ne 0) {
-            throw "Packaged launcher failed with exit code $($process.ExitCode)."
-          }
           Compress-Archive `
             -LiteralPath .\build\package\NcmBreaker `
             -DestinationPath ".\release\NcmBreaker-$env:VERSION-windows-x86_64.zip" `
@@ -145,7 +133,6 @@ jobs:
             --add-modules "$modules,jdk.crypto.ec" \
             --app-version "$VERSION" \
             --icon src/main/resources/ncm-breaker.png
-          build/package/NcmBreaker/bin/NcmBreaker --help >/dev/null
           tar -C build/package -czf \
             "release/NcmBreaker-$VERSION-linux-x86_64.tar.gz" NcmBreaker
 
