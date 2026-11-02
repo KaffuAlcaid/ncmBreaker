@@ -1,6 +1,7 @@
 package com.ncmbreaker.ui.music;
 
 import com.ncmbreaker.app.AppSettingsStore;
+import com.ncmbreaker.app.FileSize;
 import com.ncmbreaker.audio.OutputPlanner;
 import com.ncmbreaker.audio.AudioProcessingService;
 import com.ncmbreaker.audio.ProcessingOptions;
@@ -63,7 +64,7 @@ final class QualityDialog extends JDialog {
         qualityRow.add(new JLabel("下载音质"), BorderLayout.WEST);
         UiStyle.comboBox(quality);
         quality.setRenderer((list, value, index, selected, focused) -> {
-            var label = new JLabel(value == null ? "" : value.quality() + "：%.1f MB".formatted(value.bytes() / 1048576.0)
+            var label = new JLabel(value == null ? "" : value.quality() + "：" + FileSize.format(value.bytes())
                     + (value.sampleRate() > 0 ? "，%.1f kHz".formatted(value.sampleRate() / 1000.0) : ""));
             label.setOpaque(true); label.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
             label.setBackground(selected ? list.getSelectionBackground() : list.getBackground());
@@ -174,7 +175,7 @@ final class QualityDialog extends JDialog {
                     }
                     AudioResult existing = null;
                     if (comparison.items().get(0).difference() != DownloadManager.Difference.NEW) {
-                        var dialog = new IncrementalDownloadDialog(QualityDialog.this, comparison); dialog.setVisible(true);
+                        var dialog = new IncrementalDownloadDialog(QualityDialog.this, comparison, java.util.Map.of(song.id(), result.bytes())); dialog.setVisible(true);
                         var choice = dialog.selection();
                         if (choice == null) { download.setEnabled(processing.validation().isBlank()); status.setText(" "); return; }
                         if (choice.songs().isEmpty()) existing = choice.existing().get(song.id());

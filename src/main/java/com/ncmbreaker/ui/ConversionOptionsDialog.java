@@ -23,7 +23,7 @@ public final class ConversionOptionsDialog extends JDialog {
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
         var root = new JPanel(new BorderLayout(0, 12));
         root.setBorder(BorderFactory.createEmptyBorder(16, 20, 16, 20));
-        var title = new JLabel("转换 " + files.size() + " 个文件，音频共 %.1f MB".formatted(totalBytes / 1048576.0));
+        var title = new JLabel("转换 " + files.size() + " 个文件，音频共 " + com.ncmbreaker.app.FileSize.format(totalBytes));
         title.setFont(title.getFont().deriveFont(17f)); root.add(title, BorderLayout.NORTH);
         var processing = new ProcessingOptionsPanel(initial, directory, files, "本地转换", true,
                 session != null && session.account() != null, true);

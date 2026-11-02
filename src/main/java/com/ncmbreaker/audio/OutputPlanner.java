@@ -134,7 +134,7 @@ public final class OutputPlanner {
         long required;
         try { required = Math.addExact(Math.multiplyExact(audioBytes, rewrite ? 2 : 1), 16L * 1024 * 1024); }
         catch (ArithmeticException exception) { throw new IOException("文件过大，无法估算保存空间", exception); }
-        if (Files.getFileStore(directory).getUsableSpace() < required) throw new IOException("保存目录空间不足，预计需要至少 %.1f MB".formatted(required / 1048576.0));
+        if (Files.getFileStore(directory).getUsableSpace() < required) throw new IOException("保存目录空间不足，预计需要至少 " + com.ncmbreaker.app.FileSize.format(required));
     }
 
     public static void preflightBatch(Path directory, long audioBytes, long temporaryBytes) throws IOException {
@@ -142,7 +142,7 @@ public final class OutputPlanner {
         long required;
         try { required = Math.addExact(Math.addExact(audioBytes, temporaryBytes), 16L * 1024 * 1024); }
         catch (ArithmeticException exception) { throw new IOException("文件过大，无法估算保存空间", exception); }
-        if (Files.getFileStore(directory).getUsableSpace() < required) throw new IOException("保存目录空间不足，预计需要至少 %.1f MB".formatted(required / 1048576.0));
+        if (Files.getFileStore(directory).getUsableSpace() < required) throw new IOException("保存目录空间不足，预计需要至少 " + com.ncmbreaker.app.FileSize.format(required));
     }
 
     public static Saved commit(Path temporary, Path desired, ConflictPolicy policy, List<String> companions,

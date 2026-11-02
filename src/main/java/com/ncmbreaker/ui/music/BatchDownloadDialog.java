@@ -38,11 +38,14 @@ final class BatchDownloadDialog extends JDialog {
         var title = new JLabel(source.name()); title.putClientProperty("html.disable", Boolean.TRUE);
         title.setFont(title.getFont().deriveFont(18f)); title.setToolTipText(source.name());
         heading.add(title, BorderLayout.NORTH);
-        var count = new JLabel("本次下载 " + songs.size() + " 首歌曲");
+        var count = new JLabel("已选 " + songs.size() + " 首歌曲");
         long missing = songs.stream().filter(song -> !song.detailAvailable()).count();
         if (missing > 0) count.setText(count.getText() + "，" + missing + " 首详情待获取");
         if (source.expectedCount() != source.songs().size()) count.setText(count.getText() + "；已读取 " + source.songs().size() + " / " + source.expectedCount() + " 首");
-        heading.add(count, BorderLayout.CENTER);
+        var sizes = new DownloadSizePreview(session, songs);
+        var information = new JPanel(new BorderLayout(0, 8));
+        information.add(count, BorderLayout.NORTH); information.add(sizes, BorderLayout.CENTER);
+        heading.add(information, BorderLayout.CENTER);
         var qualityRow = new JPanel(new BorderLayout(12, 0));
         qualityRow.add(new JLabel("下载音质"), BorderLayout.WEST);
         var quality = new JComboBox<>(AudioQuality.values()); quality.setName("batch.quality");
@@ -59,6 +62,7 @@ final class BatchDownloadDialog extends JDialog {
         Runnable updateQuality = () -> {
             var selected = (AudioQuality) quality.getSelectedItem();
             processing.setQuality(selected.toString(), QualityDialog.previewFormat(selected));
+            sizes.setQuality(selected);
         };
         quality.addActionListener(event -> updateQuality.run()); updateQuality.run();
         var scroll = UiStyle.scrollPane(processing); scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
@@ -101,7 +105,7 @@ final class BatchDownloadDialog extends JDialog {
                         java.util.Map<Long, com.ncmbreaker.audio.AudioResult> existing = java.util.Map.of();
                         if (alwaysCompare || !comparison.removed().isEmpty()
                                 || comparison.items().stream().anyMatch(item -> item.difference() != DownloadManager.Difference.NEW)) {
-                            var dialog = new IncrementalDownloadDialog(BatchDownloadDialog.this, comparison);
+                            var dialog = new IncrementalDownloadDialog(BatchDownloadDialog.this, comparison, sizes);
                             dialog.setVisible(true);
                             var choice = dialog.selection();
                             if (choice == null) { download.setEnabled(processing.validation().isBlank()); status.setText(" "); return; }
@@ -130,7 +134,7 @@ final class BatchDownloadDialog extends JDialog {
         setSize(Math.min(700, available.width - 40), Math.min(820, available.height - 60));
         setLocationRelativeTo(owner);
         addWindowListener(new WindowAdapter() {
-            @Override public void windowClosed(WindowEvent event) { processing.close(); if (worker != null) worker.cancel(true); }
+            @Override public void windowClosed(WindowEvent event) { sizes.close(); processing.close(); if (worker != null) worker.cancel(true); }
         });
     }
 }

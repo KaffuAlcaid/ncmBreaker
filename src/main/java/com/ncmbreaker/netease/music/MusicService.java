@@ -185,12 +185,39 @@ public final class MusicService {
         parameters.addProperty("songId", songId);
         var response = post("/api/song/music/detail/get", parameters, NeteaseClient.Protocol.EAPI);
         var data = object(response, "data");
+        var options = qualityOptions(data);
+        if (options.isEmpty()) throw new MusicException(MusicException.Kind.QUALITY, "这首歌暂时没有可用的音质信息");
+        return options;
+    }
+
+    public java.util.Map<Long, List<QualityOption>> qualities(List<Long> ids) throws IOException, InterruptedException {
+        var result = new LinkedHashMap<Long, List<QualityOption>>();
+        for (int start = 0; start < ids.size(); start += 200) {
+            if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
+            var batch = ids.subList(start, Math.min(start + 200, ids.size()));
+            var query = new JsonArray();
+            for (long id : batch) {
+                var item = new JsonObject(); item.addProperty("id", id); query.add(item);
+                result.put(id, List.of());
+            }
+            var request = new JsonObject(); request.addProperty("c", query.toString());
+            var response = post("/api/v3/song/detail", request, NeteaseClient.Protocol.WEAPI);
+            for (var value : array(response, "songs")) {
+                if (!value.isJsonObject()) continue;
+                var song = value.getAsJsonObject(); long id = number(song, "id");
+                if (result.containsKey(id)) result.put(id, qualityOptions(song));
+            }
+        }
+        return java.util.Map.copyOf(result);
+    }
+
+    private static List<QualityOption> qualityOptions(JsonObject data) {
         var options = new ArrayList<QualityOption>();
         for (var quality : AudioQuality.values()) {
             var resource = object(data, quality.resourceKey());
             if (quality == AudioQuality.SKY) {
                 for (var alternative : array(data, "sks")) {
-                    if ("c51".equals(text(alternative.getAsJsonObject(), "it"))) {
+                    if (alternative.isJsonObject() && "c51".equals(text(alternative.getAsJsonObject(), "it"))) {
                         resource = alternative.getAsJsonObject();
                         break;
                     }
@@ -201,7 +228,6 @@ public final class MusicService {
                         (int) number(resource, "sr"), (int) number(resource, "br")));
             }
         }
-        if (options.isEmpty()) throw new MusicException("这首歌暂时没有可用的音质信息");
         return List.copyOf(options);
     }
 

@@ -7,20 +7,32 @@ import com.ncmbreaker.ui.UiStyle;
 import javax.swing.*;
 import javax.swing.table.AbstractTableModel;
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 final class IncrementalDownloadDialog extends JDialog {
     record Selection(List<Song> songs, Map<Long, AudioResult> existing) { }
     private Selection selection;
 
-    IncrementalDownloadDialog(Window owner, Comparison comparison) {
+    IncrementalDownloadDialog(Window owner, Comparison comparison, DownloadSizePreview sizes) {
+        this(owner, comparison, sizes::sizes, sizes);
+    }
+
+    IncrementalDownloadDialog(Window owner, Comparison comparison, Map<Long, Long> sizes) {
+        this(owner, comparison, () -> sizes, null);
+    }
+
+    private IncrementalDownloadDialog(Window owner, Comparison comparison, Supplier<Map<Long, Long>> sizes, DownloadSizePreview liveSizes) {
         super(owner, "下载差异", ModalityType.APPLICATION_MODAL);
         var items = comparison.items();
         var checked = new boolean[items.size()];
         var summary = new JLabel();
+        var size = new JLabel(); size.setName("incremental.totalSize");
         var model = new AbstractTableModel() {
             private final String[] columns = {"下载", "歌曲", "歌手", "本地状态", "已有音质"};
             @Override public int getRowCount() { return items.size(); }
@@ -56,7 +68,8 @@ final class IncrementalDownloadDialog extends JDialog {
             model.fireTableDataChanged();
         };
         presets.addActionListener(event -> apply.run()); top.add(presets, BorderLayout.WEST);
-        summary.setForeground(UiStyle.muted()); top.add(summary, BorderLayout.CENTER); root.add(top, BorderLayout.NORTH);
+        summary.setForeground(UiStyle.muted());
+        top.add(summary, BorderLayout.CENTER); top.add(size, BorderLayout.SOUTH); root.add(top, BorderLayout.NORTH);
         var table = new JTable(model); UiStyle.table(table, 44); table.setName("incremental.table");
         int[] widths = {48, 160, 120, 126, 92};
         for (int i = 0; i < widths.length; i++) {
@@ -98,13 +111,26 @@ final class IncrementalDownloadDialog extends JDialog {
             }
             selection = new Selection(List.copyOf(songs), Map.copyOf(existing)); dispose();
         });
+        Runnable updateSize = () -> {
+            var selectedSongs = new ArrayList<Song>();
+            for (int i = 0; i < items.size(); i++) if (checked[i]) selectedSongs.add(items.get(i).song());
+            size.setText("预计下载：" + DownloadSizePreview.summary(selectedSongs, sizes.get()));
+            size.setToolTipText(size.getText());
+        };
         model.addTableModelListener(event -> {
             int count = 0; for (boolean value : checked) if (value) count++;
             long existing = items.stream().filter(item -> item.difference() == Difference.PRESENT).count();
-            summary.setText(items.size() + " 首歌曲，已有所选音质 " + existing + " 首，选中 " + count + " 首");
+            summary.setText("已选 " + count + " / " + items.size() + " 首，已有所选音质 " + existing + " 首");
             download.setText(count == 0 ? "使用已有文件" : "下载所选（" + count + "）");
             download.setEnabled(count > 0 || existing > 0);
+            updateSize.run();
         });
+        if (liveSizes != null) {
+            liveSizes.addChangeListener(updateSize);
+            addWindowListener(new WindowAdapter() {
+                @Override public void windowClosed(WindowEvent event) { liveSizes.removeChangeListener(updateSize); }
+            });
+        }
         apply.run(); actions.add(cancel); actions.add(download); root.add(actions, BorderLayout.SOUTH);
         setContentPane(root); setDefaultCloseOperation(DISPOSE_ON_CLOSE); getRootPane().setDefaultButton(download);
         setMinimumSize(new Dimension(640, 400)); setSize(960, 560); setLocationRelativeTo(owner);

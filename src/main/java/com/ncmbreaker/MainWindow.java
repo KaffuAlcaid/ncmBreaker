@@ -718,10 +718,7 @@ public final class MainWindow extends JFrame {
     }
 
     private static String formatBytes(long bytes) {
-        if (bytes < 1024 * 1024) {
-            return String.format("%.1f KB", bytes / 1024.0);
-        }
-        return String.format("%.1f MB", bytes / (1024.0 * 1024.0));
+        return com.ncmbreaker.app.FileSize.format(bytes);
     }
 
     private static String elide(String value, int limit) {

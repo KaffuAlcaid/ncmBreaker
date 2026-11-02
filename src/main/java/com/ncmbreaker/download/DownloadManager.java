@@ -393,8 +393,8 @@ public final class DownloadManager implements AutoCloseable {
             var result = new AudioDownloader().download(authorization, task.metadata.fillMissing(TrackMetadata.fromSong(song)),
                     task.context, task.options, task.processing, task.cancellation,
                     (done, total) -> update(task, done == total ? "正在校验" : "正在下载",
-                            "%.1f%%  %.1f / %.1f MB  %.1f MB/s".formatted(done * 100.0 / total, done / 1048576.0,
-                                    total / 1048576.0, done / 1048576.0 / Math.max(0.1, (System.nanoTime() - start) / 1_000_000_000.0))),
+                            "%.1f%%  %s / %s  %.1f MB/s".formatted(done * 100.0 / total, com.ncmbreaker.app.FileSize.format(done),
+                                    com.ncmbreaker.app.FileSize.format(total), done / 1048576.0 / Math.max(0.1, (System.nanoTime() - start) / 1_000_000_000.0))),
                     stage -> update(task, stage, "100%"), new AudioDownloader.CommitListener() {
                         @Override public void beforeMove(Path temporary, Path target, TrackMetadata metadata) throws IOException {
                             rememberIntent(task, temporary, target, metadata);
