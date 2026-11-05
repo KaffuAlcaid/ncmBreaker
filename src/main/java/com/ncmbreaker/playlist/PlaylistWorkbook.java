@@ -51,7 +51,8 @@ public final class PlaylistWorkbook {
         checkCancelled();
         var temporary = Files.createTempFile(target.getParent(), ".ncm-breaker-playlist-", ".tmp");
         try {
-            try (var output = Files.newOutputStream(temporary); var workbook = new Workbook(output, "NCM Breaker", "0.4.0")) {
+            // XLSX application versions must use the XX.YYYY format.
+            try (var output = Files.newOutputStream(temporary); var workbook = new Workbook(output, "NCM Breaker", "0.4001")) {
                 workbook.setGlobalDefaultFont("Microsoft YaHei", 11);
                 var sheet = workbook.newWorksheet("歌曲");
                 for (int column = 0; column < HEADERS.length; column++) {
